@@ -7,7 +7,7 @@ import { fileApi } from '../lib/api';
 export default function BidderUploadPage() {
   const {
     getSelectedTender, simulateUpload, isUploading, uploadProgress,
-    selectedTenderId, addBidderApi, runEvaluation, isParsing,
+    selectedTenderId, addBidderApi, runEvaluation, isParsing, processOcr,
   } = useAppStore();
   const tender = getSelectedTender();
   const [dragOver, setDragOver] = useState(false);
@@ -15,6 +15,16 @@ export default function BidderUploadPage() {
   const [newBidderName, setNewBidderName] = useState('');
   const [showAddBidder, setShowAddBidder] = useState(false);
   const [pipelineStatus, setPipelineStatus] = useState<string | null>(null);
+
+  const fileToBase64 = useCallback(async (file: File): Promise<string> => {
+    const buffer = await file.arrayBuffer();
+    let binary = '';
+    const bytes = new Uint8Array(buffer);
+    for (let i = 0; i < bytes.length; i += 1) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+  }, []);
 
   const handleUpload = useCallback(async (files: File[]) => {
     if (files.length === 0 || !selectedTenderId) return;
@@ -37,7 +47,12 @@ export default function BidderUploadPage() {
     if (newBidder?.id) {
       try {
         for (const file of files) {
-          await fileApi.upload(file, newBidder.id, selectedTenderId);
+          const uploadResult = await fileApi.upload(file, newBidder.id, selectedTenderId);
+          const fileId = uploadResult.file?.id as string | undefined;
+          if (fileId) {
+            const fileBase64 = await fileToBase64(file);
+            await processOcr(fileId, undefined, fileBase64);
+          }
         }
       } catch {
         // Fall back to simulation
@@ -48,7 +63,7 @@ export default function BidderUploadPage() {
     setUploadingBidder(null);
     setNewBidderName('');
     setShowAddBidder(false);
-  }, [simulateUpload, selectedTenderId, addBidderApi, newBidderName]);
+  }, [simulateUpload, selectedTenderId, addBidderApi, newBidderName, fileToBase64, processOcr]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();

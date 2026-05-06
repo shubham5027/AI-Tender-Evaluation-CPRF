@@ -147,6 +147,7 @@ export const useAppStore = create<AppState>((set, get) => ({
                   detail.tender.criteria as Record<string, unknown>[] | undefined,
                   detail.tender.bidders as Record<string, unknown>[] | undefined,
                   detail.tender.evaluations as Record<string, unknown>[] | undefined,
+                  detail.tender.bidder_files as Record<string, unknown>[] | undefined,
                 );
               }
             } catch {
@@ -178,6 +179,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           t.criteria as Record<string, unknown>[] | undefined,
           t.bidders as Record<string, unknown>[] | undefined,
           t.evaluations as Record<string, unknown>[] | undefined,
+          t.bidder_files as Record<string, unknown>[] | undefined,
         );
         set((state) => ({
           tenders: state.tenders.map((existing) => existing.id === id ? mapped : existing),

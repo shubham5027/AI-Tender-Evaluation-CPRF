@@ -10,7 +10,7 @@ export default function TenderUploadPage() {
     isUploading, uploadProgress, isParsing, parsingProgress,
     simulateUpload, simulateParsing, getSelectedTender,
     updateCriterion, extractCriteria, selectedTenderId,
-    createTender, isLoading, tenders, setSelectedTender,
+    createTender, isLoading, tenders, setSelectedTender, processOcr,
   } = useAppStore();
 
   const tender = getSelectedTender();
@@ -26,6 +26,16 @@ export default function TenderUploadPage() {
   const [newTitle, setNewTitle] = useState('');
   const [newRefNo, setNewRefNo] = useState('');
 
+  const fileToBase64 = useCallback(async (uploadedFile: File): Promise<string> => {
+    const buffer = await uploadedFile.arrayBuffer();
+    let binary = '';
+    const bytes = new Uint8Array(buffer);
+    for (let i = 0; i < bytes.length; i += 1) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+  }, []);
+
   const handleCreateTender = useCallback(async () => {
     if (!newTitle.trim() || !newRefNo.trim()) return;
     const newTender = await createTender(newTitle.trim(), newRefNo.trim());
@@ -38,9 +48,12 @@ export default function TenderUploadPage() {
 
   const handleUploadWithFile = useCallback(async (file?: File) => {
     const fileToUpload = file || selectedFile;
+    let ocrText = '';
     if (fileToUpload && selectedTenderId) {
       try {
         await fileApi.uploadTenderDoc(fileToUpload, selectedTenderId);
+        const base64 = await fileToBase64(fileToUpload);
+        ocrText = await processOcr(`tender_${selectedTenderId}`, undefined, base64);
       } catch {
         // Storage upload failed, continue with mock flow
       }
@@ -50,7 +63,7 @@ export default function TenderUploadPage() {
 
     if (selectedTenderId) {
       try {
-        await extractCriteria(selectedTenderId);
+        await extractCriteria(selectedTenderId, ocrText || undefined);
         setParsed(true);
         return;
       } catch {
@@ -59,7 +72,7 @@ export default function TenderUploadPage() {
     }
     await simulateParsing();
     setParsed(true);
-  }, [simulateUpload, simulateParsing, extractCriteria, selectedTenderId, selectedFile]);
+  }, [simulateUpload, simulateParsing, extractCriteria, selectedTenderId, selectedFile, fileToBase64, processOcr]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -104,14 +117,13 @@ export default function TenderUploadPage() {
 
   // Determine if we need to show the new tender form
   const hasTender = !!tender;
-  const showUploadArea = hasTender && !uploaded;
 
   return (
     <div>
       <Header title="Tender Upload" subtitle="Upload tender document and review extracted criteria" />
       <div className="p-8">
         {/* Tender selector / creator */}
-        {!showUploadArea && !uploaded && (
+        {!uploaded && (
           <div className="mb-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-sm font-semibold text-gray-900">Select or Create a Tender</h2>

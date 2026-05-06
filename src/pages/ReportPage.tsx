@@ -4,6 +4,7 @@ import Header from '../components/layout/Header';
 import StatusBadge from '../components/common/StatusBadge';
 import ConfidenceIndicator from '../components/common/ConfidenceIndicator';
 import { useAppStore } from '../store/useAppStore';
+import type { DecisionStatus } from '../types';
 
 export default function ReportPage() {
   const { getSelectedTender, isLoading, useMockData } = useAppStore();
@@ -34,7 +35,7 @@ export default function ReportPage() {
       return criterion?.weight === 'Mandatory';
     });
     const mandatoryPass = mandatory.filter((e) => e.decision === 'Eligible').length;
-    const overallStatus = notEligible > 0 ? 'Not Eligible' : review > 0 ? 'Review' : 'Eligible';
+    const overallStatus: DecisionStatus = notEligible > 0 ? 'Not Eligible' : review > 0 ? 'Review' : 'Eligible';
     return {
       bidder: b,
       eligible,
@@ -131,7 +132,7 @@ export default function ReportPage() {
                         <td className="px-4 py-3 text-center text-sm text-red-600 font-semibold">{row.notEligible}</td>
                         <td className="px-4 py-3 text-center text-sm text-amber-600 font-semibold">{row.review}</td>
                         <td className="px-4 py-3 text-center text-sm text-gray-700">{row.mandatoryPass}/{row.mandatoryTotal}</td>
-                        <td className="px-4 py-3"><StatusBadge status={row.overallStatus as any} /></td>
+                        <td className="px-4 py-3"><StatusBadge status={row.overallStatus} /></td>
                       </tr>
                     ))}
                   </tbody>
