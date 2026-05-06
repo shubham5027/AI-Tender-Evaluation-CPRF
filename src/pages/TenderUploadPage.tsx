@@ -21,6 +21,7 @@ export default function TenderUploadPage() {
   const [editValues, setEditValues] = useState<Partial<Criterion>>({});
   const [dragOver, setDragOver] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isServerUploading, setIsServerUploading] = useState(false);
 
   // New tender form
   const [showNewTenderForm, setShowNewTenderForm] = useState(false);
@@ -50,31 +51,39 @@ export default function TenderUploadPage() {
   const handleUploadWithFile = useCallback(async (file?: File) => {
     const fileToUpload = file || selectedFile;
     let ocrText = '';
-    if (fileToUpload && selectedTenderId) {
-      try {
-        await fileApi.uploadTenderDoc(fileToUpload, selectedTenderId);
-        const base64 = await fileToBase64(fileToUpload);
-        ocrText = await processOcr(`tender_${selectedTenderId}`, undefined, base64);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Tender upload failed.';
-        showToast('error', `Tender upload failed: ${message}. Using local fallback parsing.`);
+    setIsServerUploading(true);
+    try {
+      if (fileToUpload && selectedTenderId) {
+        try {
+          await fileApi.uploadTenderDoc(fileToUpload, selectedTenderId);
+          const base64 = await fileToBase64(fileToUpload);
+          ocrText = await processOcr(`tender_${selectedTenderId}`, undefined, base64, {
+            tenderId: selectedTenderId,
+            sourceScope: 'tender_policy',
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Tender upload failed.';
+          showToast('error', `Tender upload failed: ${message}. Using local fallback parsing.`);
+        }
       }
-    }
-    await simulateUpload();
-    setUploaded(true);
+      await simulateUpload();
+      setUploaded(true);
 
-    if (selectedTenderId) {
-      try {
-        await extractCriteria(selectedTenderId, ocrText || undefined);
-        setParsed(true);
-        return;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Criteria extraction failed.';
-        showToast('error', `Criteria extraction failed: ${message}. Rendering simulated criteria.`);
+      if (selectedTenderId) {
+        try {
+          await extractCriteria(selectedTenderId, ocrText || undefined);
+          setParsed(true);
+          return;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Criteria extraction failed.';
+          showToast('error', `Criteria extraction failed: ${message}. Rendering simulated criteria.`);
+        }
       }
+      await simulateParsing();
+      setParsed(true);
+    } finally {
+      setIsServerUploading(false);
     }
-    await simulateParsing();
-    setParsed(true);
   }, [simulateUpload, simulateParsing, extractCriteria, selectedTenderId, selectedFile, fileToBase64, processOcr]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -249,6 +258,16 @@ export default function TenderUploadPage() {
                 </button>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Uploading to server */}
+        {isServerUploading && !isUploading && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
+            <div className="flex items-center gap-3">
+              <Loader2 className="w-5 h-5 text-navy-600 animate-spin" />
+              <span className="text-sm font-medium text-gray-900">Uploading tender file to secure storage...</span>
+            </div>
           </div>
         )}
 

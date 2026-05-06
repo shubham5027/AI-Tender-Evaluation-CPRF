@@ -53,7 +53,11 @@ export default function BidderUploadPage() {
           const fileId = uploadResult.file?.id as string | undefined;
           if (fileId) {
             const fileBase64 = await fileToBase64(file);
-            await processOcr(fileId, undefined, fileBase64);
+            await processOcr(fileId, undefined, fileBase64, {
+              tenderId: selectedTenderId,
+              bidderId: newBidder.id,
+              sourceScope: 'bidder_document',
+            });
           }
         }
       } catch (error) {

@@ -41,14 +41,19 @@ interface AppState {
   updateCriterionApi: (tenderId: string, criterionId: string, updates: Partial<Criterion>) => Promise<void>;
   updateEvaluationApi: (tenderId: string, evalId: string, updates: Partial<EvaluationResult>) => Promise<void>;
   addBidderApi: (tenderId: string, name: string) => Promise<void>;
-  processOcr: (fileId: string, fileUrl?: string, fileBase64?: string) => Promise<string>;
+  processOcr: (
+    fileId: string,
+    fileUrl?: string,
+    fileBase64?: string,
+    meta?: { tenderId?: string; bidderId?: string; sourceScope?: 'tender_policy' | 'bidder_document' }
+  ) => Promise<string>;
   refreshTimeline: () => void;
   seedDatabase: () => Promise<void>;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
   tenders: MOCK_TENDERS,
-  selectedTenderId: MOCK_TENDERS[0].id,
+  selectedTenderId: MOCK_TENDERS[0]?.id || null,
   activityLog: MOCK_ACTIVITY,
   timeline: MOCK_TIMELINE,
   uploadProgress: 0,
@@ -57,7 +62,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   parsingProgress: 0,
   isLoading: false,
   error: null,
-  useMockData: true,
+  useMockData: false,
 
   setSelectedTender: (id) => {
     set({ selectedTenderId: id });
@@ -163,8 +168,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         get().refreshTimeline();
       }
     } catch {
-      set({ isLoading: false, error: 'Failed to fetch tenders, using mock data' });
-      showToast('error', 'Failed to fetch tenders from server. Showing cached data.');
+      set({ isLoading: false, error: 'Failed to fetch tenders' });
+      showToast('error', 'Failed to fetch tenders from server.');
     }
   },
 
@@ -311,9 +316,21 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  processOcr: async (fileId: string, fileUrl?: string, fileBase64?: string): Promise<string> => {
+  processOcr: async (
+    fileId: string,
+    fileUrl?: string,
+    fileBase64?: string,
+    meta?: { tenderId?: string; bidderId?: string; sourceScope?: 'tender_policy' | 'bidder_document' }
+  ): Promise<string> => {
     try {
-      const result = await ocrApi.process({ file_id: fileId, file_url: fileUrl, file_base64: fileBase64 });
+      const result = await ocrApi.process({
+        file_id: fileId,
+        file_url: fileUrl,
+        file_base64: fileBase64,
+        tender_id: meta?.tenderId,
+        bidder_id: meta?.bidderId,
+        source_scope: meta?.sourceScope,
+      });
       return result.text || '';
     } catch {
       return '';

@@ -241,6 +241,20 @@ function getApiHeaders(contentType = true): Record<string, string> {
   return headers;
 }
 
+async function fetchWithTimeout(
+  input: string,
+  init: RequestInit,
+  timeoutMs = 20000
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
 async function getRemoteDb(): Promise<LocalDb | null> {
   try {
     const response = await fetch(`${API_BASE_URL}/api/state`, {
@@ -549,7 +563,15 @@ export const tenderApi = {
 
 // Document OCR (local simulation)
 export const ocrApi = {
-  process: async (data: { file_url?: string; file_base64?: string; language?: string; file_id?: string }) => {
+  process: async (data: {
+    file_url?: string;
+    file_base64?: string;
+    language?: string;
+    file_id?: string;
+    tender_id?: string;
+    bidder_id?: string;
+    source_scope?: 'tender_policy' | 'bidder_document';
+  }) => {
     const db = await getDb();
     if (data.file_id) {
       const file = db.bidder_files.find((f) => f.id === data.file_id);
@@ -563,10 +585,16 @@ export const ocrApi = {
     let provider = 'local';
 
     try {
+      const sourceScope = data.source_scope || (data.file_id?.startsWith('tender_') ? 'tender_policy' : 'bidder_document');
+      const tenderId = data.tender_id || (data.file_id?.startsWith('tender_') ? data.file_id.replace(/^tender_/, '') : undefined);
       const response = await fetch(`${API_BASE_URL}/api/ocr`, {
         method: 'POST',
         headers: getApiHeaders(),
         body: JSON.stringify({
+          file_id: data.file_id,
+          source_scope: sourceScope,
+          tender_id: tenderId,
+          bidder_id: data.bidder_id,
           file_base64: data.file_base64,
           file_url: data.file_url,
           language: data.language || 'hi,en',
@@ -647,6 +675,18 @@ async function batchEvaluateWithAI(
   const newEvaluations: EvaluationRow[] = [];
   const totalEvals = tenderBidders.length * tenderCriteria.length;
   let completed = 0;
+  const buildFallbackEvaluation = (bidderId: string, criterionId: string, sourceDoc: string, reason: string): EvaluationRow => ({
+    id: uid('ev'),
+    tender_id: tenderId,
+    bidder_id: bidderId,
+    criterion_id: criterionId,
+    extracted_value: 'Evaluation unavailable',
+    decision: 'Review',
+    confidence: 0.3,
+    source_document: sourceDoc,
+    explanation: `Manual review required. ${reason}`,
+    created_at: new Date().toISOString(),
+  });
 
   for (const bidder of tenderBidders) {
     const bidderFiles = tenderFiles.filter((f) => f.bidder_id === bidder.id);
@@ -655,7 +695,7 @@ async function batchEvaluateWithAI(
 
     for (const criterion of tenderCriteria) {
       try {
-        const response = await fetch(`${API_BASE_URL}/api/evaluate`, {
+        const response = await fetchWithTimeout(`${API_BASE_URL}/api/evaluate`, {
           method: 'POST',
           headers: getApiHeaders(),
           body: JSON.stringify({
@@ -671,7 +711,7 @@ async function batchEvaluateWithAI(
             ocr_text: ocrText,
             source_document: sourceDoc,
           }),
-        });
+        }, 20000);
 
         if (response.ok) {
           const payload = await response.json() as { success?: boolean; evaluation?: Record<string, unknown> };
@@ -689,23 +729,28 @@ async function batchEvaluateWithAI(
               explanation: (evalData.explanation as string) || '',
               created_at: new Date().toISOString(),
             });
+          } else {
+            newEvaluations.push(
+              buildFallbackEvaluation(bidder.id, criterion.id, sourceDoc, 'AI response format was invalid.')
+            );
           }
+        } else {
+          const errorBody = await response.text();
+          newEvaluations.push(
+            buildFallbackEvaluation(
+              bidder.id,
+              criterion.id,
+              sourceDoc,
+              `AI endpoint returned HTTP ${response.status}${errorBody ? `: ${errorBody}` : ''}`
+            )
+          );
         }
       } catch (error) {
-        console.warn('AI evaluation failed for', bidder.name, criterion.name, error);
-        // Add a fallback evaluation
-        newEvaluations.push({
-          id: uid('ev'),
-          tender_id: tenderId,
-          bidder_id: bidder.id,
-          criterion_id: criterion.id,
-          extracted_value: 'Evaluation failed',
-          decision: 'Review',
-          confidence: 0.3,
-          source_document: sourceDoc,
-          explanation: 'AI evaluation failed; manual review required.',
-          created_at: new Date().toISOString(),
-        });
+        const reason = error instanceof Error ? error.message : 'Unknown evaluation error';
+        console.warn('AI evaluation failed for', bidder.name, criterion.name, reason);
+        newEvaluations.push(
+          buildFallbackEvaluation(bidder.id, criterion.id, sourceDoc, `AI evaluation failed: ${reason}`)
+        );
       }
 
       completed += 1;
@@ -731,6 +776,9 @@ export const evaluationApi = {
     try {
       // Use batch AI evaluation
       const newEvaluations = await batchEvaluateWithAI(db, data.tender_id);
+      if (newEvaluations.length === 0) {
+        throw new Error('No evaluations were generated by AI pipeline.');
+      }
 
       // Remove old evaluations for this tender
       db.evaluations = db.evaluations.filter((e) => e.tender_id !== data.tender_id);
@@ -932,4 +980,3 @@ export function importLocalData(payload: { tenders: Tender[] }) {
   const seeded = buildSeedDb();
   void saveDb(seeded);
 }
-

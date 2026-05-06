@@ -7,7 +7,7 @@ import {
   PieChart,
   FileText,
   UserCheck,
-  Shield,
+  Rocket,
 } from 'lucide-react';
 
 const navItems = [
@@ -25,10 +25,13 @@ export default function Sidebar() {
     <aside className="fixed left-0 top-0 h-screen w-64 bg-navy-900 text-white flex flex-col z-50">
       <div className="px-6 py-5 border-b border-navy-800">
         <div className="flex items-center gap-3">
-          <Shield className="w-8 h-8 text-gold-400" />
+          {/* <Shield className="w-8 h-8 text-gold-400" /> */}
           <div>
-            <h1 className="text-base font-bold tracking-wide leading-tight">TenderEval</h1>
-            <p className="text-[10px] text-navy-300 tracking-widest uppercase">AI-Powered System</p>
+            <h1 className="text-base font-bold tracking-wide leading-tight flex items-center gap-1.5">
+              ProcureRocket
+              <Rocket className="w-6 h-6 text-gold-500" />
+            </h1>
+            <p className="text-[10px] text-navy-300 tracking-widest uppercase">AI Tender Intelligence</p>
           </div>
         </div>
       </div>

@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { MongoClient } from 'mongodb';
 import {
   S3Client,
+  HeadBucketCommand,
   GetObjectCommand,
   PutObjectCommand,
   DeleteObjectCommand,
@@ -19,18 +20,27 @@ const BUCKET = process.env.S3_BUCKET_NAME;
 const SARVAM_API_URL = process.env.SARVAM_API_URL || 'https://api.sarvam.ai/v1/ocr';
 const SARVAM_API_KEY = process.env.SARVAM_API_KEY || '';
 const SARVAM_LLM_API_URL = process.env.SARVAM_LLM_API_URL || 'https://api.sarvam.ai/v1/chat/completions';
-const SARVAM_LLM_API_KEY = process.env.SARVAM_LLM_API_KEY || SARVAM_API_KEY;
+const SARVAM_USE_OCR_KEY_FOR_LLM = process.env.SARVAM_USE_OCR_KEY_FOR_LLM === 'true';
+const SARVAM_LLM_API_KEY = process.env.SARVAM_LLM_API_KEY || (SARVAM_USE_OCR_KEY_FOR_LLM ? SARVAM_API_KEY : '');
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const S3_BIDDER_PREFIX = process.env.S3_BIDDER_PREFIX || 'Bidder_Documents';
 const S3_TENDER_PREFIX = process.env.S3_TENDER_PREFIX || 'Tendor_Policy_Doc';
 const API_AUTH_TOKEN = process.env.API_AUTH_TOKEN || '';
 const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 50);
+const EXTERNAL_AI_TIMEOUT_MS = Number(process.env.EXTERNAL_AI_TIMEOUT_MS || 8000);
+const MAX_OCR_CHARS_FOR_EVAL = Number(process.env.MAX_OCR_CHARS_FOR_EVAL || 12000);
+const MONGODB_SERVER_SELECTION_TIMEOUT_MS = Number(process.env.MONGODB_SERVER_SELECTION_TIMEOUT_MS || 5000);
+const MONGODB_CONNECT_TIMEOUT_MS = Number(process.env.MONGODB_CONNECT_TIMEOUT_MS || 5000);
 const MONGODB_URI = process.env.MONGODB_URI || '';
 const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME || 'tendereval';
 const MONGODB_STATE_COLLECTION = process.env.MONGODB_STATE_COLLECTION || 'app_state';
 const MONGODB_OCR_COLLECTION = process.env.MONGODB_OCR_COLLECTION || 'ocr_results';
+const MONGODB_TENDER_OCR_COLLECTION = process.env.MONGODB_TENDER_OCR_COLLECTION || 'tender_policy_ocr';
+const MONGODB_BIDDER_OCR_COLLECTION = process.env.MONGODB_BIDDER_OCR_COLLECTION || 'bidder_document_ocr';
 const MONGODB_EVALUATIONS_COLLECTION = process.env.MONGODB_EVALUATIONS_COLLECTION || 'evaluations';
+const MONGODB_EVALUATION_TRACES_COLLECTION = process.env.MONGODB_EVALUATION_TRACES_COLLECTION || 'evaluation_traces';
+const MONGODB_UPLOAD_EVENTS_COLLECTION = process.env.MONGODB_UPLOAD_EVENTS_COLLECTION || 'upload_events';
 const STATE_DOC_ID = process.env.MONGODB_STATE_DOC_ID || 'current';
 
 if (!BUCKET) {
@@ -55,8 +65,13 @@ const s3 = new S3Client({
   forcePathStyle: process.env.S3_FORCE_PATH_STYLE === 'true',
 });
 
-const mongoClient = new MongoClient(MONGODB_URI);
+const mongoClient = new MongoClient(MONGODB_URI, {
+  serverSelectionTimeoutMS: MONGODB_SERVER_SELECTION_TIMEOUT_MS,
+  connectTimeoutMS: MONGODB_CONNECT_TIMEOUT_MS,
+});
 let mongoConnectPromise = null;
+let mongoWriteBackoffUntil = 0;
+let lastMongoWriteError = '';
 
 app.use(cors());
 app.use(express.json({ limit: '25mb' }));
@@ -70,6 +85,10 @@ const ocrSchema = z.object({
   file_base64: z.string().min(1).optional(),
   file_url: z.string().url().optional(),
   language: z.string().optional(),
+  file_id: z.string().optional(),
+  tender_id: z.string().optional(),
+  bidder_id: z.string().optional(),
+  source_scope: z.enum(['tender_policy', 'bidder_document']).optional(),
 }).refine((v) => Boolean(v.file_base64 || v.file_url), {
   message: 'Either file_base64 or file_url is required.',
 });
@@ -126,9 +145,38 @@ async function getOcrCollection() {
   return db.collection(MONGODB_OCR_COLLECTION);
 }
 
+async function getTenderOcrCollection() {
+  const db = await getMongoDb();
+  return db.collection(MONGODB_TENDER_OCR_COLLECTION);
+}
+
+async function getBidderOcrCollection() {
+  const db = await getMongoDb();
+  return db.collection(MONGODB_BIDDER_OCR_COLLECTION);
+}
+
 async function getEvaluationsCollection() {
   const db = await getMongoDb();
   return db.collection(MONGODB_EVALUATIONS_COLLECTION);
+}
+
+async function getEvaluationTracesCollection() {
+  const db = await getMongoDb();
+  return db.collection(MONGODB_EVALUATION_TRACES_COLLECTION);
+}
+
+async function getUploadEventsCollection() {
+  const db = await getMongoDb();
+  return db.collection(MONGODB_UPLOAD_EVENTS_COLLECTION);
+}
+
+function canAttemptMongoWrite() {
+  return Date.now() >= mongoWriteBackoffUntil;
+}
+
+function noteMongoWriteFailure(message) {
+  lastMongoWriteError = message;
+  mongoWriteBackoffUntil = Date.now() + 60_000;
 }
 
 async function readStateEnvelope() {
@@ -159,6 +207,50 @@ function extractSarvamText(payload) {
   return '';
 }
 
+async function fetchJsonWithTimeout(url, options = {}, timeoutMs = EXTERNAL_AI_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    const raw = await response.text();
+    let parsed = null;
+    try {
+      parsed = raw ? JSON.parse(raw) : null;
+    } catch {
+      parsed = null;
+    }
+    return { response, raw, parsed };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function normalizeDecision(input, fallback = 'Review') {
+  const value = String(input || '').trim().toLowerCase();
+  if (value === 'eligible') return 'Eligible';
+  if (value === 'not eligible' || value === 'not_eligible' || value === 'noteligible') return 'Not Eligible';
+  if (value === 'review' || value === 'needs review' || value === 'needs_review') return 'Review';
+  return fallback;
+}
+
+function normalizeConfidence(input, fallback = 0.5) {
+  const value = Number(input);
+  if (!Number.isFinite(value)) return fallback;
+  if (value < 0) return 0;
+  if (value > 1) return 1;
+  return value;
+}
+
+function resolveDocumentScope(payload) {
+  if (payload?.source_scope === 'tender_policy' || payload?.source_scope === 'bidder_document') {
+    return payload.source_scope;
+  }
+  const fileId = String(payload?.file_id || '');
+  if (fileId.startsWith('tender_') || fileId.startsWith('policy_')) return 'tender_policy';
+  return 'bidder_document';
+}
+
 async function evaluateWithLLM(evaluationData) {
   const {
     criterion_name,
@@ -168,6 +260,9 @@ async function evaluateWithLLM(evaluationData) {
     ocr_text,
     bidder_name,
   } = evaluationData;
+  const compactOcrText = typeof ocr_text === 'string'
+    ? ocr_text.slice(0, MAX_OCR_CHARS_FOR_EVAL)
+    : '';
 
   const prompt = `You are an expert tender evaluation assistant. Evaluate the bidder against the criterion based on the OCR-extracted document text.
 
@@ -179,7 +274,7 @@ Description: ${criterion_description || 'No description'}
 Threshold: ${criterion_threshold || 'Not specified'}
 
 Document Text:
-${ocr_text || 'No OCR text provided'}
+${compactOcrText || 'No OCR text provided'}
 
 Please evaluate and respond in this exact JSON format (no markdown, no code blocks):
 {
@@ -192,7 +287,7 @@ Please evaluate and respond in this exact JSON format (no markdown, no code bloc
   // Try Sarvam LLM first
   if (SARVAM_LLM_API_KEY) {
     try {
-      const response = await fetch(SARVAM_LLM_API_URL, {
+      const { response, parsed } = await fetchJsonWithTimeout(SARVAM_LLM_API_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -216,21 +311,33 @@ Please evaluate and respond in this exact JSON format (no markdown, no code bloc
       });
 
       if (response.ok) {
-        const result = await response.json();
+        const result = parsed;
         if (result.choices && result.choices[0]?.message?.content) {
           const content = result.choices[0].message.content.trim();
           try {
             const parsed = JSON.parse(content);
-            return { ...parsed, provider: 'sarvam-llm' };
+            return {
+              ...parsed,
+              decision: normalizeDecision(parsed.decision),
+              confidence: normalizeConfidence(parsed.confidence),
+              provider: 'sarvam-llm',
+            };
           } catch {
             // If JSON parsing fails, try to extract JSON from the response
             const jsonMatch = content.match(/\{[\s\S]*\}/);
             if (jsonMatch) {
               const parsed = JSON.parse(jsonMatch[0]);
-              return { ...parsed, provider: 'sarvam-llm' };
+              return {
+                ...parsed,
+                decision: normalizeDecision(parsed.decision),
+                confidence: normalizeConfidence(parsed.confidence),
+                provider: 'sarvam-llm',
+              };
             }
           }
         }
+      } else {
+        console.warn(`Sarvam LLM responded ${response.status}`);
       }
     } catch (error) {
       console.warn('Sarvam LLM failed:', error instanceof Error ? error.message : 'Unknown error');
@@ -240,7 +347,7 @@ Please evaluate and respond in this exact JSON format (no markdown, no code bloc
   // Fallback to OpenRouter
   if (OPENROUTER_API_KEY) {
     try {
-      const response = await fetch(OPENROUTER_API_URL, {
+      const { response, parsed } = await fetchJsonWithTimeout(OPENROUTER_API_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -266,20 +373,32 @@ Please evaluate and respond in this exact JSON format (no markdown, no code bloc
       });
 
       if (response.ok) {
-        const result = await response.json();
+        const result = parsed;
         if (result.choices && result.choices[0]?.message?.content) {
           const content = result.choices[0].message.content.trim();
           try {
             const parsed = JSON.parse(content);
-            return { ...parsed, provider: 'openrouter' };
+            return {
+              ...parsed,
+              decision: normalizeDecision(parsed.decision),
+              confidence: normalizeConfidence(parsed.confidence),
+              provider: 'openrouter',
+            };
           } catch {
             const jsonMatch = content.match(/\{[\s\S]*\}/);
             if (jsonMatch) {
               const parsed = JSON.parse(jsonMatch[0]);
-              return { ...parsed, provider: 'openrouter' };
+              return {
+                ...parsed,
+                decision: normalizeDecision(parsed.decision),
+                confidence: normalizeConfidence(parsed.confidence),
+                provider: 'openrouter',
+              };
             }
           }
         }
+      } else {
+        console.warn(`OpenRouter responded ${response.status}`);
       }
     } catch (error) {
       console.warn('OpenRouter failed:', error instanceof Error ? error.message : 'Unknown error');
@@ -306,8 +425,8 @@ Please evaluate and respond in this exact JSON format (no markdown, no code bloc
   }
 
   return {
-    decision,
-    confidence,
+    decision: normalizeDecision(decision),
+    confidence: normalizeConfidence(confidence),
     extracted_value,
     explanation: `Fallback evaluation: ${decision} with ${Math.round(confidence * 100)}% confidence.`,
     provider: 'fallback',
@@ -318,7 +437,189 @@ app.get('/health', (_req, res) => {
   res.json({ ok: true, storage: 's3', database: 'mongodb' });
 });
 
+app.get('/health/deps', async (_req, res) => {
+  const result = {
+    ok: false,
+    mongo: { ok: false, error: '' },
+    s3: { ok: false, error: '' },
+  };
+
+  try {
+    const db = await getMongoDb();
+    await db.command({ ping: 1 });
+    result.mongo.ok = true;
+  } catch (error) {
+    result.mongo.error = error instanceof Error ? error.message : 'MongoDB check failed';
+  }
+
+  try {
+    await s3.send(new HeadBucketCommand({ Bucket: BUCKET }));
+    result.s3.ok = true;
+  } catch (error) {
+    result.s3.error = error instanceof Error ? error.message : 'S3 check failed';
+  }
+
+  result.ok = result.mongo.ok && result.s3.ok;
+  const statusCode = result.ok ? 200 : 503;
+  return res.status(statusCode).json(result);
+});
+
+app.get('/health/ai', (_req, res) => {
+  const now = Date.now();
+  res.json({
+    ok: true,
+    llm: {
+      sarvam_configured: Boolean(SARVAM_LLM_API_KEY),
+      sarvam_using_ocr_key: SARVAM_USE_OCR_KEY_FOR_LLM,
+      openrouter_configured: Boolean(OPENROUTER_API_KEY),
+      timeout_ms: EXTERNAL_AI_TIMEOUT_MS,
+    },
+    mongo_write: {
+      available: canAttemptMongoWrite(),
+      backoff_ms_remaining: Math.max(0, mongoWriteBackoffUntil - now),
+      last_error: lastMongoWriteError,
+    },
+  });
+});
+
 app.use('/api', authMiddleware);
+
+app.get('/api/observability/summary', async (req, res) => {
+  try {
+    const tenderId = String(req.query.tender_id || '').trim();
+    const filter = tenderId ? { tender_id: tenderId } : {};
+
+    const [
+      ocrCollection,
+      tenderOcrCollection,
+      bidderOcrCollection,
+      evaluationsCollection,
+      evaluationTracesCollection,
+      uploadEventsCollection,
+    ] = await Promise.all([
+      getOcrCollection(),
+      getTenderOcrCollection(),
+      getBidderOcrCollection(),
+      getEvaluationsCollection(),
+      getEvaluationTracesCollection(),
+      getUploadEventsCollection(),
+    ]);
+
+    const [
+      legacyOcrCount,
+      tenderPolicyOcrCount,
+      bidderDocumentOcrCount,
+      evaluationCount,
+      evaluationTraceCount,
+      uploadEventCount,
+      latestEvaluation,
+      latestTrace,
+    ] = await Promise.all([
+      ocrCollection.countDocuments(filter),
+      tenderOcrCollection.countDocuments(filter),
+      bidderOcrCollection.countDocuments(filter),
+      evaluationsCollection.countDocuments(filter),
+      evaluationTracesCollection.countDocuments(filter),
+      uploadEventsCollection.countDocuments(filter),
+      evaluationsCollection.find(filter).sort({ updated_at: -1, created_at: -1 }).limit(1).next(),
+      evaluationTracesCollection.find(filter).sort({ created_at: -1 }).limit(1).next(),
+    ]);
+
+    return res.json({
+      success: true,
+      tender_id: tenderId || null,
+      collections: {
+        legacy_ocr: MONGODB_OCR_COLLECTION,
+        tender_policy_ocr: MONGODB_TENDER_OCR_COLLECTION,
+        bidder_document_ocr: MONGODB_BIDDER_OCR_COLLECTION,
+        evaluations: MONGODB_EVALUATIONS_COLLECTION,
+        evaluation_traces: MONGODB_EVALUATION_TRACES_COLLECTION,
+        upload_events: MONGODB_UPLOAD_EVENTS_COLLECTION,
+      },
+      counts: {
+        legacy_ocr: legacyOcrCount,
+        tender_policy_ocr: tenderPolicyOcrCount,
+        bidder_document_ocr: bidderDocumentOcrCount,
+        evaluations: evaluationCount,
+        evaluation_traces: evaluationTraceCount,
+        upload_events: uploadEventCount,
+      },
+      latest: {
+        evaluation: latestEvaluation
+          ? {
+            evaluation_key: latestEvaluation._id,
+            tender_id: latestEvaluation.tender_id,
+            bidder_id: latestEvaluation.bidder_id,
+            criterion_id: latestEvaluation.criterion_id,
+            decision: latestEvaluation.decision,
+            ai_provider: latestEvaluation.ai_provider,
+            updated_at: latestEvaluation.updated_at || latestEvaluation.created_at || null,
+          }
+          : null,
+        evaluation_trace: latestTrace
+          ? {
+            evaluation_key: latestTrace.evaluation_key,
+            decision: latestTrace.decision,
+            ai_provider: latestTrace.ai_provider,
+            duration_ms: latestTrace.duration_ms,
+            created_at: latestTrace.created_at || null,
+          }
+          : null,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to load observability summary',
+    });
+  }
+});
+
+app.get('/api/observability/records', async (req, res) => {
+  try {
+    const kind = String(req.query.kind || '').trim();
+    const tenderId = String(req.query.tender_id || '').trim();
+    const bidderId = String(req.query.bidder_id || '').trim();
+    const limitRaw = Number(req.query.limit || 25);
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 200) : 25;
+
+    const filter = {};
+    if (tenderId) filter.tender_id = tenderId;
+    if (bidderId) filter.bidder_id = bidderId;
+
+    const loaders = {
+      tender_policy_ocr: async () => getTenderOcrCollection(),
+      bidder_document_ocr: async () => getBidderOcrCollection(),
+      evaluations: async () => getEvaluationsCollection(),
+      evaluation_traces: async () => getEvaluationTracesCollection(),
+      upload_events: async () => getUploadEventsCollection(),
+    };
+
+    if (!Object.prototype.hasOwnProperty.call(loaders, kind)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid kind. Use one of: tender_policy_ocr, bidder_document_ocr, evaluations, evaluation_traces, upload_events',
+      });
+    }
+
+    const collection = await loaders[kind]();
+    const sort = kind === 'evaluations' ? { updated_at: -1, created_at: -1 } : { created_at: -1 };
+    const records = await collection.find(filter).sort(sort).limit(limit).toArray();
+
+    return res.json({
+      success: true,
+      kind,
+      filter,
+      count: records.length,
+      records,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to fetch observability records',
+    });
+  }
+});
 
 app.get('/api/state', async (_req, res) => {
   try {
@@ -442,6 +743,22 @@ app.post('/api/files/upload', (req, res, next) => {
       })
     );
 
+    try {
+      const uploadEventsCollection = await getUploadEventsCollection();
+      await uploadEventsCollection.insertOne({
+        scope: scope === 'tender' ? 'tender_policy' : 'bidder_document',
+        tender_id: tenderId || null,
+        bidder_id: bidderId || null,
+        file_name: file.originalname,
+        file_size: file.size,
+        content_type: file.mimetype || 'application/octet-stream',
+        s3_key: key,
+        created_at: new Date(),
+      });
+    } catch (error) {
+      console.warn('[upload] Failed to write upload observability event:', error instanceof Error ? error.message : 'Unknown error');
+    }
+
     return res.status(201).json({
       success: true,
       key,
@@ -507,21 +824,33 @@ app.delete('/api/files', async (req, res) => {
 });
 
 app.post('/api/ocr', async (req, res) => {
+  let requestMetaForError = null;
+  let sourceScopeForError = 'bidder_document';
   try {
     const parsed = ocrSchema.safeParse(req.body || {});
     if (!parsed.success) {
       return res.status(400).json({ success: false, error: parsed.error.flatten() });
     }
 
-    const { file_base64, file_url, language } = parsed.data;
+    const { file_base64, file_url, language, file_id, tender_id, bidder_id } = parsed.data;
+    const sourceScope = resolveDocumentScope(parsed.data);
 
     const ocrCollection = await getOcrCollection();
+    const dedicatedOcrCollection = sourceScope === 'tender_policy'
+      ? await getTenderOcrCollection()
+      : await getBidderOcrCollection();
     const requestMeta = {
+      file_id: file_id || null,
+      source_scope: sourceScope,
+      tender_id: tender_id || null,
+      bidder_id: bidder_id || null,
       file_url: file_url || null,
       has_file_base64: Boolean(file_base64),
       language: language || 'hi,en',
       created_at: new Date(),
     };
+    requestMetaForError = requestMeta;
+    sourceScopeForError = sourceScope;
 
     if (SARVAM_API_KEY) {
       const payload = {
@@ -531,7 +860,7 @@ app.post('/api/ocr', async (req, res) => {
         ...(file_url ? { file_url } : {}),
       };
 
-      const response = await fetch(SARVAM_API_URL, {
+      const { response, raw, parsed } = await fetchJsonWithTimeout(SARVAM_API_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -541,28 +870,35 @@ app.post('/api/ocr', async (req, res) => {
       });
 
       if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Sarvam OCR failed (${response.status}): ${errText}`);
+        throw new Error(`Sarvam OCR failed (${response.status}): ${raw}`);
       }
 
-      const result = await response.json();
+      const result = parsed || {};
       const text = extractSarvamText(result);
-      await ocrCollection.insertOne({
+      const record = {
         ...requestMeta,
         provider: 'sarvam',
         text: text || '',
         raw_response: result,
-      });
+      };
+      await Promise.all([
+        ocrCollection.insertOne(record),
+        dedicatedOcrCollection.insertOne(record),
+      ]);
       return res.json({ success: true, text: text || '', provider: 'sarvam' });
     }
 
     const localText = `Simulated OCR output${file_url ? ` for ${file_url}` : ''}`;
-    await ocrCollection.insertOne({
+    const record = {
       ...requestMeta,
       provider: 'local',
       text: localText,
       raw_response: null,
-    });
+    };
+    await Promise.all([
+      ocrCollection.insertOne(record),
+      dedicatedOcrCollection.insertOne(record),
+    ]);
 
     return res.json({
       success: true,
@@ -570,6 +906,35 @@ app.post('/api/ocr', async (req, res) => {
       provider: 'local',
     });
   } catch (error) {
+    try {
+      const ocrCollection = await getOcrCollection();
+      const dedicatedOcrCollection = sourceScopeForError === 'tender_policy'
+        ? await getTenderOcrCollection()
+        : await getBidderOcrCollection();
+      const errorRecord = {
+        ...(requestMetaForError || {
+          file_id: null,
+          source_scope: sourceScopeForError,
+          tender_id: null,
+          bidder_id: null,
+          file_url: null,
+          has_file_base64: false,
+          language: 'hi,en',
+          created_at: new Date(),
+        }),
+        provider: 'error',
+        text: '',
+        raw_response: null,
+        error_message: error instanceof Error ? error.message : 'OCR failed',
+        failed_at: new Date(),
+      };
+      await Promise.all([
+        ocrCollection.insertOne(errorRecord),
+        dedicatedOcrCollection.insertOne(errorRecord),
+      ]);
+    } catch (persistError) {
+      console.warn('[ocr] Failed to write OCR error observability record:', persistError instanceof Error ? persistError.message : 'Unknown error');
+    }
     return res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'OCR failed',
@@ -587,8 +952,10 @@ app.post('/api/evaluate', async (req, res) => {
     const evaluationData = parsed.data;
     const { tender_id, bidder_id, criterion_id } = evaluationData;
 
+    const startedAt = Date.now();
     // Get AI evaluation
     const aiResult = await evaluateWithLLM(evaluationData);
+    const completedAt = Date.now();
 
     // Create evaluation record
     const evaluation = {
@@ -602,8 +969,8 @@ app.post('/api/evaluate', async (req, res) => {
       criterion_weight: evaluationData.criterion_weight,
       criterion_threshold: evaluationData.criterion_threshold,
       extracted_value: aiResult.extracted_value || '',
-      decision: aiResult.decision || 'Review',
-      confidence: aiResult.confidence || 0.5,
+      decision: normalizeDecision(aiResult.decision),
+      confidence: normalizeConfidence(aiResult.confidence),
       source_document: evaluationData.source_document || 'N/A',
       explanation: aiResult.explanation || '',
       ai_provider: aiResult.provider || 'unknown',
@@ -611,16 +978,60 @@ app.post('/api/evaluate', async (req, res) => {
       updated_at: new Date(),
     };
 
-    // Store in MongoDB
-    const evaluationsCollection = await getEvaluationsCollection();
-    await evaluationsCollection.updateOne(
-      { _id: evaluation._id },
-      { $set: evaluation },
-      { upsert: true }
-    );
+    let persisted = true;
+    let persistenceError = '';
+    if (canAttemptMongoWrite()) {
+      try {
+        const evaluationsCollection = await getEvaluationsCollection();
+        await evaluationsCollection.updateOne(
+          { _id: evaluation._id },
+          { $set: evaluation },
+          { upsert: true }
+        );
+      } catch (error) {
+        persisted = false;
+        persistenceError = error instanceof Error ? error.message : 'Failed to persist evaluation';
+        noteMongoWriteFailure(persistenceError);
+        console.warn('[evaluate] Mongo persist failed:', persistenceError);
+      }
+    } else {
+      persisted = false;
+      persistenceError = lastMongoWriteError || 'MongoDB write temporarily skipped due to recent connection failure.';
+    }
+
+    try {
+      const evaluationTracesCollection = await getEvaluationTracesCollection();
+      await evaluationTracesCollection.insertOne({
+        evaluation_key: evaluation._id,
+        tender_id,
+        bidder_id,
+        bidder_name: evaluationData.bidder_name,
+        criterion_id,
+        criterion_name: evaluationData.criterion_name,
+        criterion_category: evaluationData.criterion_category || null,
+        criterion_weight: evaluationData.criterion_weight || null,
+        criterion_threshold: evaluationData.criterion_threshold || null,
+        source_document: evaluationData.source_document || null,
+        ocr_text_length: typeof evaluationData.ocr_text === 'string' ? evaluationData.ocr_text.length : 0,
+        ocr_excerpt: typeof evaluationData.ocr_text === 'string' ? evaluationData.ocr_text.slice(0, 2000) : '',
+        ai_provider: evaluation.ai_provider,
+        decision: evaluation.decision,
+        confidence: evaluation.confidence,
+        extracted_value: evaluation.extracted_value,
+        explanation: evaluation.explanation,
+        duration_ms: completedAt - startedAt,
+        evaluation_persisted: persisted,
+        evaluation_persistence_error: persisted ? null : persistenceError,
+        created_at: new Date(),
+      });
+    } catch (error) {
+      console.warn('[evaluate] Failed to write evaluation trace:', error instanceof Error ? error.message : 'Unknown error');
+    }
 
     return res.json({
       success: true,
+      persisted,
+      ...(persisted ? {} : { persistence_error: persistenceError }),
       evaluation: {
         id: evaluation._id,
         tender_id: evaluation.tender_id,
