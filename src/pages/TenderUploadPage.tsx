@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { Upload, FileText, CheckCircle, Loader2, CreditCard as Edit3, Save, X, Tag } from 'lucide-react';
 import Header from '../components/layout/Header';
+import { showToast } from '../components/common/NotificationToast';
 import { useAppStore } from '../store/useAppStore';
 import type { Criterion, CriterionCategory, CriterionWeight } from '../types';
 import { fileApi } from '../lib/api';
@@ -54,8 +55,9 @@ export default function TenderUploadPage() {
         await fileApi.uploadTenderDoc(fileToUpload, selectedTenderId);
         const base64 = await fileToBase64(fileToUpload);
         ocrText = await processOcr(`tender_${selectedTenderId}`, undefined, base64);
-      } catch {
-        // Storage upload failed, continue with mock flow
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Tender upload failed.';
+        showToast('error', `Tender upload failed: ${message}. Using local fallback parsing.`);
       }
     }
     await simulateUpload();
@@ -66,8 +68,9 @@ export default function TenderUploadPage() {
         await extractCriteria(selectedTenderId, ocrText || undefined);
         setParsed(true);
         return;
-      } catch {
-        // Fall back to simulation
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Criteria extraction failed.';
+        showToast('error', `Criteria extraction failed: ${message}. Rendering simulated criteria.`);
       }
     }
     await simulateParsing();

@@ -634,6 +634,90 @@ export const criteriaApi = {
   },
 };
 
+// Helper function to orchestrate batch AI evaluations
+async function batchEvaluateWithAI(
+  db: LocalDb,
+  tenderId: string,
+  onProgress?: (progress: number) => void
+): Promise<EvaluationRow[]> {
+  const bundle = getTenderBundle(db, tenderId);
+  if (!bundle) throw new Error('Tender not found');
+
+  const { tenderCriteria, tenderBidders, tenderFiles } = bundle;
+  const newEvaluations: EvaluationRow[] = [];
+  const totalEvals = tenderBidders.length * tenderCriteria.length;
+  let completed = 0;
+
+  for (const bidder of tenderBidders) {
+    const bidderFiles = tenderFiles.filter((f) => f.bidder_id === bidder.id);
+    const ocrText = bidderFiles.map((f) => f.ocr_text).join('\n\n');
+    const sourceDoc = bidderFiles[0]?.file_name || 'N/A';
+
+    for (const criterion of tenderCriteria) {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/evaluate`, {
+          method: 'POST',
+          headers: getApiHeaders(),
+          body: JSON.stringify({
+            tender_id: tenderId,
+            bidder_id: bidder.id,
+            bidder_name: bidder.name,
+            criterion_id: criterion.id,
+            criterion_name: criterion.name,
+            criterion_category: criterion.category,
+            criterion_weight: criterion.weight,
+            criterion_description: criterion.description,
+            criterion_threshold: criterion.threshold,
+            ocr_text: ocrText,
+            source_document: sourceDoc,
+          }),
+        });
+
+        if (response.ok) {
+          const payload = await response.json() as { success?: boolean; evaluation?: Record<string, unknown> };
+          if (payload.success && payload.evaluation) {
+            const evalData = payload.evaluation as Record<string, unknown>;
+            newEvaluations.push({
+              id: (evalData.id as string) || uid('ev'),
+              tender_id: tenderId,
+              bidder_id: bidder.id,
+              criterion_id: criterion.id,
+              extracted_value: (evalData.extracted_value as string) || '',
+              decision: (evalData.decision as string) || 'Review',
+              confidence: (evalData.confidence as number) || 0.5,
+              source_document: sourceDoc,
+              explanation: (evalData.explanation as string) || '',
+              created_at: new Date().toISOString(),
+            });
+          }
+        }
+      } catch (error) {
+        console.warn('AI evaluation failed for', bidder.name, criterion.name, error);
+        // Add a fallback evaluation
+        newEvaluations.push({
+          id: uid('ev'),
+          tender_id: tenderId,
+          bidder_id: bidder.id,
+          criterion_id: criterion.id,
+          extracted_value: 'Evaluation failed',
+          decision: 'Review',
+          confidence: 0.3,
+          source_document: sourceDoc,
+          explanation: 'AI evaluation failed; manual review required.',
+          created_at: new Date().toISOString(),
+        });
+      }
+
+      completed += 1;
+      if (onProgress) {
+        onProgress(Math.round((completed / totalEvals) * 100));
+      }
+    }
+  }
+
+  return newEvaluations;
+}
+
 // Evaluation
 export const evaluationApi = {
   evaluate: async (data: { tender_id: string }) => {
@@ -642,10 +726,79 @@ export const evaluationApi = {
     if (!tender) throw new Error('Tender not found');
     tender.status = 'Evaluating';
     tender.updated_at = new Date().toISOString();
-
-    const result = evaluateTender(db, data.tender_id);
     await saveDb(db);
-    return { success: true, ...result };
+
+    try {
+      // Use batch AI evaluation
+      const newEvaluations = await batchEvaluateWithAI(db, data.tender_id);
+
+      // Remove old evaluations for this tender
+      db.evaluations = db.evaluations.filter((e) => e.tender_id !== data.tender_id);
+      db.evaluations.push(...newEvaluations);
+
+      // Update bidder statuses
+      const tenderBidders = db.bidders.filter((b) => b.tender_id === data.tender_id);
+      for (const bidder of tenderBidders) {
+        bidder.status = 'Completed';
+      }
+
+      // Update tender status
+      tender.status = 'Completed';
+      tender.updated_at = new Date().toISOString();
+
+      // Add activity log
+      const eligible = newEvaluations.filter((e) => e.decision === 'Eligible').length;
+      const notEligible = newEvaluations.filter((e) => e.decision === 'Not Eligible').length;
+      const review = newEvaluations.filter((e) => e.decision === 'Review').length;
+
+      addActivity(db, {
+        tender_id: data.tender_id,
+        action: 'AI Evaluation completed',
+        user_name: 'System',
+        details: `${tenderBidders.length} bidders evaluated. ${eligible} eligible, ${notEligible} not eligible, ${review} need review.`,
+      });
+
+      await saveDb(db);
+      return { success: true, evaluations: newEvaluations, summary: { eligible, notEligible, review } };
+    } catch (error) {
+      console.warn('Batch AI evaluation failed, using fallback:', error);
+      // Fallback: Use local hash-based evaluation if server fails
+      const result = evaluateTender(db, data.tender_id);
+      await saveDb(db);
+      return { success: true, ...result };
+    }
+  },
+
+  runAIEvaluation: async (data: {
+    tender_id: string;
+    bidder_id: string;
+    bidder_name: string;
+    criterion_id: string;
+    criterion_name: string;
+    criterion_category?: string;
+    criterion_weight?: string;
+    criterion_description?: string;
+    criterion_threshold?: string;
+    ocr_text?: string;
+    source_document?: string;
+  }) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/evaluate`, {
+        method: 'POST',
+        headers: getApiHeaders(),
+        body: JSON.stringify(data),
+      });
+
+      if (response.ok) {
+        return response.json();
+      }
+      throw new Error('Failed to run AI evaluation');
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Evaluation failed',
+      };
+    }
   },
 };
 

@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { FileText, CheckCircle, Loader2, FolderOpen, X, Play, Brain } from 'lucide-react';
 import Header from '../components/layout/Header';
+import { showToast } from '../components/common/NotificationToast';
 import { useAppStore } from '../store/useAppStore';
 import { fileApi } from '../lib/api';
 
@@ -36,8 +37,9 @@ export default function BidderUploadPage() {
     // Create bidder in backend
     try {
       await addBidderApi(selectedTenderId, bidderName);
-    } catch {
-      // Continue with simulation
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to add bidder at this time.';
+      showToast('error', `Failed to create bidder: ${message}. Upload will continue in offline mode.`);
     }
 
     // Upload files to the newly created bidder
@@ -54,8 +56,9 @@ export default function BidderUploadPage() {
             await processOcr(fileId, undefined, fileBase64);
           }
         }
-      } catch {
-        // Fall back to simulation
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Upload or OCR processing failed.';
+        showToast('error', `Document upload failed: ${message}. Continuing with offline fallback.`);
       }
     }
 
@@ -63,7 +66,7 @@ export default function BidderUploadPage() {
     setUploadingBidder(null);
     setNewBidderName('');
     setShowAddBidder(false);
-  }, [simulateUpload, selectedTenderId, addBidderApi, newBidderName, fileToBase64, processOcr]);
+  }, [selectedTenderId, newBidderName, addBidderApi, fileToBase64, processOcr, simulateUpload]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -86,8 +89,10 @@ export default function BidderUploadPage() {
       await runEvaluation(selectedTenderId);
       setPipelineStatus('Evaluation complete!');
       setTimeout(() => setPipelineStatus(null), 3000);
-    } catch {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Evaluation failed.';
       setPipelineStatus('Evaluation failed. Please try again.');
+      showToast('error', `AI evaluation failed: ${message}`);
       setTimeout(() => setPipelineStatus(null), 3000);
     }
   }, [selectedTenderId, runEvaluation]);

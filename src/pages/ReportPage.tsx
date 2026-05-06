@@ -1,20 +1,42 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { FileText, Download, CheckCircle2, XCircle, AlertTriangle, Loader2 } from 'lucide-react';
 import Header from '../components/layout/Header';
 import StatusBadge from '../components/common/StatusBadge';
 import ConfidenceIndicator from '../components/common/ConfidenceIndicator';
+import EvaluationSummary from '../components/common/EvaluationSummary';
 import { useAppStore } from '../store/useAppStore';
+import { generatePDFReport } from '../lib/pdfExport';
+import { showToast } from '../components/common/NotificationToast';
 import type { DecisionStatus } from '../types';
 
 export default function ReportPage() {
   const { getSelectedTender, isLoading, useMockData } = useAppStore();
   const tender = getSelectedTender();
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     if (tender && !useMockData && tender.evaluations.length === 0 && tender.bidders.length > 0) {
       // Refresh if evaluations might be pending
     }
   }, [tender?.id]);
+
+  const handleExportPDF = async () => {
+    if (!tender) {
+      showToast('error', 'No tender selected for export');
+      return;
+    }
+
+    try {
+      setIsExporting(true);
+      await generatePDFReport(tender);
+      showToast('success', 'Report exported successfully');
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to export PDF';
+      showToast('error', `Export failed: ${errorMessage}`);
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   const evaluations = tender?.evaluations || [];
   const bidders = tender?.bidders || [];
@@ -85,8 +107,21 @@ export default function ReportPage() {
               <h2 className="text-base font-semibold text-gray-900">{tender.title}</h2>
               <p className="text-xs text-gray-500 mt-0.5">Reference: {tender.referenceNo}</p>
             </div>
-            <button className="flex items-center gap-2 px-4 py-2 bg-navy-600 text-white text-sm font-medium rounded-lg hover:bg-navy-700 transition-colors">
-              <Download className="w-4 h-4" /> Export PDF
+            <button
+              onClick={handleExportPDF}
+              disabled={isExporting}
+              className="flex items-center gap-2 px-4 py-2 bg-navy-600 text-white text-sm font-medium rounded-lg hover:bg-navy-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isExporting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Exporting...
+                </>
+              ) : (
+                <>
+                  <Download className="w-4 h-4" /> Export PDF
+                </>
+              )}
             </button>
           </div>
 
@@ -108,6 +143,10 @@ export default function ReportPage() {
 
         {evaluations.length > 0 ? (
           <>
+            <div className="mb-6">
+              <EvaluationSummary tender={tender} />
+            </div>
+
             <div className="bg-white rounded-xl border border-gray-200 mb-6">
               <div className="px-5 py-4 border-b border-gray-100">
                 <h3 className="text-sm font-semibold text-gray-900">Bidder Summary</h3>
