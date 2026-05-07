@@ -7,6 +7,9 @@ import EvaluationPage from './pages/EvaluationPage';
 import DecisionSummaryPage from './pages/DecisionSummaryPage';
 import ReportPage from './pages/ReportPage';
 import ReviewPage from './pages/ReviewPage';
+import SmartEligibilityRadarPage from './pages/SmartEligibilityRadarPage';
+import RiskHeatmapPage from './pages/RiskHeatmapPage';
+import WorkflowPreviewPage from './pages/WorkflowPreviewPage';
 
 function App() {
   return (
@@ -20,6 +23,9 @@ function App() {
           <Route path="/decision-summary" element={<DecisionSummaryPage />} />
           <Route path="/report" element={<ReportPage />} />
           <Route path="/review" element={<ReviewPage />} />
+          <Route path="/smart-eligibility-radar" element={<SmartEligibilityRadarPage />} />
+          <Route path="/risk-heatmap" element={<RiskHeatmapPage />} />
+          <Route path="/workflow-preview" element={<WorkflowPreviewPage />} />
         </Route>
       </Routes>
     </BrowserRouter>

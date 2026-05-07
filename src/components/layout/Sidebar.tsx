@@ -8,6 +8,9 @@ import {
   FileText,
   UserCheck,
   Rocket,
+  Sparkles,
+  Radar,
+  Workflow,
 } from 'lucide-react';
 
 const navItems = [
@@ -18,6 +21,12 @@ const navItems = [
   { to: '/decision-summary', icon: PieChart, label: 'Decision Summary' },
   { to: '/report', icon: FileText, label: 'Detailed Report' },
   { to: '/review', icon: UserCheck, label: 'Manual Review' },
+];
+
+const demoFeatures = [
+  { to: '/smart-eligibility-radar', icon: Sparkles, label: 'Smart Eligibility Radar' },
+  { to: '/risk-heatmap', icon: Radar, label: 'Risk Heatmap' },
+  { to: '/workflow-preview', icon: Workflow, label: 'Auto Workflow Preview' },
 ];
 
 export default function Sidebar() {
@@ -54,6 +63,25 @@ export default function Sidebar() {
             {item.label}
           </NavLink>
         ))}
+
+        <div className="pt-4 mt-4 border-t border-navy-800 space-y-1">
+          {demoFeatures.map((feature) => (
+            <NavLink
+              key={feature.to}
+              to={feature.to}
+              className={({ isActive }) =>
+                `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 ${
+                  isActive
+                    ? 'bg-navy-700 text-white shadow-sm'
+                    : 'text-navy-200 hover:bg-navy-800 hover:text-white'
+                }`
+              }
+            >
+              <feature.icon className="w-[18px] h-[18px]" />
+              <span className="truncate">{feature.label}</span>
+            </NavLink>
+          ))}
+        </div>
       </nav>
 
       <div className="px-4 py-4 border-t border-navy-800">
