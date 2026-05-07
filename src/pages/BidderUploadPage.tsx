@@ -16,6 +16,12 @@ export default function BidderUploadPage() {
   const [newBidderName, setNewBidderName] = useState('');
   const [showAddBidder, setShowAddBidder] = useState(false);
   const [pipelineStatus, setPipelineStatus] = useState<string | null>(null);
+  const [pendingOcrFiles, setPendingOcrFiles] = useState<Array<{
+    tenderId: string;
+    bidderId: string;
+    fileId: string;
+    file: File;
+  }>>([]);
 
   const fileToBase64 = useCallback(async (file: File): Promise<string> => {
     const buffer = await file.arrayBuffer();
@@ -48,21 +54,26 @@ export default function BidderUploadPage() {
 
     if (newBidder?.id) {
       try {
+        const pendingBatch: Array<{ tenderId: string; bidderId: string; fileId: string; file: File }> = [];
         for (const file of files) {
           const uploadResult = await fileApi.upload(file, newBidder.id, selectedTenderId);
           const fileId = uploadResult.file?.id as string | undefined;
           if (fileId) {
-            const fileBase64 = await fileToBase64(file);
-            await processOcr(fileId, undefined, fileBase64, {
+            pendingBatch.push({
               tenderId: selectedTenderId,
               bidderId: newBidder.id,
-              sourceScope: 'bidder_document',
+              fileId,
+              file,
             });
           }
         }
+        if (pendingBatch.length > 0) {
+          setPendingOcrFiles((prev) => [...prev, ...pendingBatch]);
+          showToast('info', `${pendingBatch.length} files uploaded. Click "Process Documents" to start OCR.`);
+        }
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Upload or OCR processing failed.';
-        showToast('error', `Document upload failed: ${message}. Continuing with offline fallback.`);
+        const message = error instanceof Error ? error.message : 'Upload failed.';
+        showToast('error', `Document upload failed: ${message}.`);
       }
     }
 
@@ -70,7 +81,7 @@ export default function BidderUploadPage() {
     setUploadingBidder(null);
     setNewBidderName('');
     setShowAddBidder(false);
-  }, [selectedTenderId, newBidderName, addBidderApi, fileToBase64, processOcr, simulateUpload]);
+  }, [selectedTenderId, newBidderName, addBidderApi, simulateUpload]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -86,8 +97,45 @@ export default function BidderUploadPage() {
     handleUpload(files);
   }, [handleUpload]);
 
+  const handleProcessDocuments = useCallback(async () => {
+    if (!selectedTenderId) return;
+    const filesToProcess = pendingOcrFiles.filter((entry) => entry.tenderId === selectedTenderId);
+    if (filesToProcess.length === 0) {
+      showToast('info', 'No newly uploaded files pending OCR processing.');
+      return;
+    }
+
+    setPipelineStatus(`Processing OCR for ${filesToProcess.length} files...`);
+    try {
+      for (const entry of filesToProcess) {
+        const fileBase64 = await fileToBase64(entry.file);
+        await processOcr(entry.fileId, undefined, fileBase64, {
+          tenderId: entry.tenderId,
+          bidderId: entry.bidderId,
+          sourceScope: 'bidder_document',
+        });
+      }
+      setPendingOcrFiles((prev) => prev.filter((entry) => entry.tenderId !== selectedTenderId));
+      setPipelineStatus('Document OCR processing completed. You can now run evaluation.');
+      showToast('success', 'OCR processing completed.');
+      setTimeout(() => setPipelineStatus(null), 3000);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'OCR processing failed.';
+      setPipelineStatus('OCR processing failed. Please try again.');
+      showToast('error', `OCR processing failed: ${message}`);
+      setTimeout(() => setPipelineStatus(null), 3000);
+    }
+  }, [selectedTenderId, pendingOcrFiles, fileToBase64, processOcr]);
+
   const handleRunPipeline = useCallback(async () => {
     if (!selectedTenderId) return;
+    const pendingCount = pendingOcrFiles.filter((entry) => entry.tenderId === selectedTenderId).length;
+    if (pendingCount > 0) {
+      setPipelineStatus(`Please process ${pendingCount} uploaded files before running evaluation.`);
+      showToast('info', 'Click "Process Documents" first, then run evaluation.');
+      setTimeout(() => setPipelineStatus(null), 3000);
+      return;
+    }
     setPipelineStatus('Running AI evaluation on all bidder documents...');
     try {
       await runEvaluation(selectedTenderId);
@@ -99,11 +147,12 @@ export default function BidderUploadPage() {
       showToast('error', `AI evaluation failed: ${message}`);
       setTimeout(() => setPipelineStatus(null), 3000);
     }
-  }, [selectedTenderId, runEvaluation]);
+  }, [selectedTenderId, runEvaluation, pendingOcrFiles]);
 
   const bidders = tender?.bidders || [];
   const hasBidders = bidders.length > 0;
   const hasEvaluations = (tender?.evaluations.length || 0) > 0;
+  const pendingCurrentTender = pendingOcrFiles.filter((entry) => entry.tenderId === selectedTenderId).length;
 
   return (
     <div>
@@ -217,10 +266,19 @@ export default function BidderUploadPage() {
           <h2 className="text-base font-semibold text-gray-900">Submitted Bidders</h2>
           <div className="flex items-center gap-3">
             <span className="text-xs text-gray-500">{bidders.length} bidders</span>
+            {selectedTenderId && pendingCurrentTender > 0 && (
+              <button
+                onClick={handleProcessDocuments}
+                disabled={isParsing}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 text-white text-xs font-medium rounded-lg hover:bg-amber-600 transition-colors disabled:opacity-50"
+              >
+                <Brain className="w-3.5 h-3.5" /> Process Documents ({pendingCurrentTender})
+              </button>
+            )}
             {hasBidders && !hasEvaluations && selectedTenderId && (
               <button
                 onClick={handleRunPipeline}
-                disabled={isParsing}
+                disabled={isParsing || pendingCurrentTender > 0}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-navy-600 text-white text-xs font-medium rounded-lg hover:bg-navy-700 transition-colors disabled:opacity-50"
               >
                 <Play className="w-3.5 h-3.5" /> Run Evaluation

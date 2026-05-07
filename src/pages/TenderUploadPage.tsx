@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { Upload, FileText, CheckCircle, Loader2, CreditCard as Edit3, Save, X, Tag } from 'lucide-react';
+import { Upload, FileText, CheckCircle, Loader2, CreditCard as Edit3, Save, X, Tag, Play } from 'lucide-react';
 import Header from '../components/layout/Header';
 import { showToast } from '../components/common/NotificationToast';
 import { useAppStore } from '../store/useAppStore';
@@ -9,7 +9,7 @@ import { fileApi } from '../lib/api';
 export default function TenderUploadPage() {
   const {
     isUploading, uploadProgress, isParsing, parsingProgress,
-    simulateUpload, simulateParsing, getSelectedTender,
+    simulateUpload, getSelectedTender,
     updateCriterion, extractCriteria, selectedTenderId,
     createTender, isLoading, tenders, setSelectedTender, processOcr,
   } = useAppStore();
@@ -50,41 +50,46 @@ export default function TenderUploadPage() {
 
   const handleUploadWithFile = useCallback(async (file?: File) => {
     const fileToUpload = file || selectedFile;
-    let ocrText = '';
     setIsServerUploading(true);
     try {
       if (fileToUpload && selectedTenderId) {
         try {
           await fileApi.uploadTenderDoc(fileToUpload, selectedTenderId);
-          const base64 = await fileToBase64(fileToUpload);
-          ocrText = await processOcr(`tender_${selectedTenderId}`, undefined, base64, {
-            tenderId: selectedTenderId,
-            sourceScope: 'tender_policy',
-          });
+          showToast('info', 'Tender uploaded. Click "Process Criteria" to start OCR and extraction.');
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Tender upload failed.';
-          showToast('error', `Tender upload failed: ${message}. Using local fallback parsing.`);
+          showToast('error', `Tender upload failed: ${message}.`);
+          return;
         }
       }
       await simulateUpload();
       setUploaded(true);
-
-      if (selectedTenderId) {
-        try {
-          await extractCriteria(selectedTenderId, ocrText || undefined);
-          setParsed(true);
-          return;
-        } catch (error) {
-          const message = error instanceof Error ? error.message : 'Criteria extraction failed.';
-          showToast('error', `Criteria extraction failed: ${message}. Rendering simulated criteria.`);
-        }
-      }
-      await simulateParsing();
-      setParsed(true);
+      setParsed(false);
     } finally {
       setIsServerUploading(false);
     }
-  }, [simulateUpload, simulateParsing, extractCriteria, selectedTenderId, selectedFile, fileToBase64, processOcr]);
+  }, [simulateUpload, selectedTenderId, selectedFile]);
+
+  const handleProcessCriteria = useCallback(async () => {
+    if (!selectedTenderId || !selectedFile) {
+      showToast('error', 'Upload a tender document first, then click Process Criteria.');
+      return;
+    }
+
+    try {
+      const base64 = await fileToBase64(selectedFile);
+      const ocrText = await processOcr(`tender_${selectedTenderId}`, undefined, base64, {
+        tenderId: selectedTenderId,
+        sourceScope: 'tender_policy',
+      });
+      await extractCriteria(selectedTenderId, ocrText || undefined);
+      setParsed(true);
+      showToast('success', 'Criteria processed successfully.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Criteria extraction failed.';
+      showToast('error', `Criteria extraction failed: ${message}`);
+    }
+  }, [selectedTenderId, selectedFile, fileToBase64, processOcr, extractCriteria]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -296,6 +301,19 @@ export default function TenderUploadPage() {
               <p className="text-xs text-gray-500">Uploaded successfully{selectedFile ? ` — ${(selectedFile.size / 1024 / 1024).toFixed(1)} MB` : ''}</p>
             </div>
             <FileText className="w-5 h-5 text-gray-400" />
+          </div>
+        )}
+
+        {uploaded && !isUploading && !parsed && (
+          <div className="mb-6 flex items-center gap-3">
+            <button
+              onClick={handleProcessCriteria}
+              disabled={isParsing || !selectedFile}
+              className="flex items-center gap-1.5 px-4 py-2 bg-navy-600 text-white text-xs font-medium rounded-lg hover:bg-navy-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Play className="w-3.5 h-3.5" /> Process Criteria
+            </button>
+            <span className="text-xs text-gray-500">OCR + criteria extraction will run only when you click this button.</span>
           </div>
         )}
 
