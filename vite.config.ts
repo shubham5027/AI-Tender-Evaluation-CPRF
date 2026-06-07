@@ -7,6 +7,8 @@ export default defineConfig({
     exclude: ['lucide-react'],
   },
   server: {
-    allowedHosts: ['.vercel.run'],
-  },
+    allowedHosts: [
+      'sb-fxbolmh0y1w5.vercel.run'
+    ]
+  }
 })
