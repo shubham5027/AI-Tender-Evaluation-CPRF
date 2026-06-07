@@ -1,4 +1,5 @@
 import { NavLink } from 'react-router-dom';
+import { useAppStore } from '../../store/useAppStore';
 import {
   LayoutDashboard,
   FileUp,
@@ -30,9 +31,15 @@ const demoFeatures = [
 ];
 
 export default function Sidebar() {
+  const isDarkMode = useAppStore((state) => state.isDarkMode);
+
   return (
-    <aside className="fixed left-0 top-0 h-screen w-64 bg-navy-900 text-white flex flex-col z-50">
-      <div className="px-6 py-5 border-b border-navy-800">
+    <aside className={`fixed left-0 top-0 h-screen w-64 flex flex-col z-50 ${
+      isDarkMode 
+        ? 'bg-gray-900 text-white border-gray-800' 
+        : 'bg-navy-900 text-white border-navy-800'
+    }`}>
+      <div className={`px-6 py-5 border-b ${isDarkMode ? 'border-gray-800' : 'border-navy-800'}`}>
         <div className="flex items-center gap-3">
           {/* <Shield className="w-8 h-8 text-gold-400" /> */}
           <div>
@@ -54,8 +61,8 @@ export default function Sidebar() {
             className={({ isActive }) =>
               `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 ${
                 isActive
-                  ? 'bg-navy-700 text-white shadow-sm'
-                  : 'text-navy-200 hover:bg-navy-800 hover:text-white'
+                  ? isDarkMode ? 'bg-gray-700 text-white shadow-sm' : 'bg-navy-700 text-white shadow-sm'
+                  : isDarkMode ? 'text-gray-300 hover:bg-gray-800 hover:text-white' : 'text-navy-200 hover:bg-navy-800 hover:text-white'
               }`
             }
           >
@@ -64,7 +71,7 @@ export default function Sidebar() {
           </NavLink>
         ))}
 
-        <div className="pt-4 mt-4 border-t border-navy-800 space-y-1">
+        <div className={`pt-4 mt-4 space-y-1 border-t ${isDarkMode ? 'border-gray-800' : 'border-navy-800'}`}>
           {demoFeatures.map((feature) => (
             <NavLink
               key={feature.to}
@@ -72,8 +79,8 @@ export default function Sidebar() {
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 ${
                   isActive
-                    ? 'bg-navy-700 text-white shadow-sm'
-                    : 'text-navy-200 hover:bg-navy-800 hover:text-white'
+                    ? isDarkMode ? 'bg-gray-700 text-white shadow-sm' : 'bg-navy-700 text-white shadow-sm'
+                    : isDarkMode ? 'text-gray-300 hover:bg-gray-800 hover:text-white' : 'text-navy-200 hover:bg-navy-800 hover:text-white'
                 }`
               }
             >
@@ -84,14 +91,16 @@ export default function Sidebar() {
         </div>
       </nav>
 
-      <div className="px-4 py-4 border-t border-navy-800">
+      <div className={`px-4 py-4 border-t ${isDarkMode ? 'border-gray-800' : 'border-navy-800'}`}>
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-navy-600 flex items-center justify-center text-xs font-bold">
+          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
+            isDarkMode ? 'bg-gray-700 text-gray-200' : 'bg-navy-600 text-white'
+          }`}>
             AK
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium truncate">Sh. A.K. Verma</p>
-            <p className="text-[11px] text-navy-400">Procurement Officer</p>
+            <p className={`text-[11px] ${isDarkMode ? 'text-gray-400' : 'text-navy-400'}`}>Procurement Officer</p>
           </div>
         </div>
       </div>

@@ -17,8 +17,10 @@ interface AppState {
   isLoading: boolean;
   error: string | null;
   useMockData: boolean;
+  isDarkMode: boolean;
 
   setSelectedTender: (id: string | null) => void;
+  toggleDarkMode: () => void;
   getSelectedTender: () => Tender | undefined;
   updateCriterion: (tenderId: string, criterionId: string, updates: Partial<Criterion>) => void;
   updateEvaluation: (evaluationId: string, updates: Partial<EvaluationResult>) => void;
@@ -51,22 +53,33 @@ interface AppState {
   seedDatabase: () => Promise<void>;
 }
 
-export const useAppStore = create<AppState>((set, get) => ({
-  tenders: MOCK_TENDERS,
-  selectedTenderId: MOCK_TENDERS[0]?.id || null,
-  activityLog: MOCK_ACTIVITY,
-  timeline: MOCK_TIMELINE,
-  uploadProgress: 0,
-  isUploading: false,
-  isParsing: false,
-  parsingProgress: 0,
-  isLoading: false,
-  error: null,
-  useMockData: false,
+export const useAppStore = create<AppState>((set, get) => {
+  // Initialize dark mode from localStorage
+  const storedDarkMode = typeof window !== 'undefined' ? localStorage.getItem('dark-mode') === 'true' : false;
+
+  return {
+    tenders: MOCK_TENDERS,
+    selectedTenderId: MOCK_TENDERS[0]?.id || null,
+    activityLog: MOCK_ACTIVITY,
+    timeline: MOCK_TIMELINE,
+    uploadProgress: 0,
+    isUploading: false,
+    isParsing: false,
+    parsingProgress: 0,
+    isLoading: false,
+    error: null,
+    useMockData: false,
+    isDarkMode: storedDarkMode,
 
   setSelectedTender: (id) => {
     set({ selectedTenderId: id });
     get().refreshTimeline();
+  },
+
+  toggleDarkMode: () => {
+    const newDarkMode = !get().isDarkMode;
+    set({ isDarkMode: newDarkMode });
+    localStorage.setItem('dark-mode', String(newDarkMode));
   },
 
   getSelectedTender: () => {
@@ -353,4 +366,5 @@ export const useAppStore = create<AppState>((set, get) => ({
       showToast('error', 'Failed to seed demo data.');
     }
   },
-}));
+  };
+});
