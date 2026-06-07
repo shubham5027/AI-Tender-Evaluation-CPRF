@@ -100,7 +100,7 @@ export default function Sidebar() {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium truncate">Sh. A.K. Verma</p>
-            <p className={`text-[11px] ${isDarkMode ? 'text-gray-400' : 'text-navy-400'}`}>Procurement Officer</p>
+            <p className={`text-[11px] ${isDarkMode ? 'text-gray-400 dark:text-gray-500' : 'text-navy-400'}`}>Procurement Officer</p>
           </div>
         </div>
       </div>

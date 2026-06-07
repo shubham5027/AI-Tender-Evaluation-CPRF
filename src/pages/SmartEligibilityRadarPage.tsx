@@ -23,7 +23,7 @@ export default function SmartEligibilityRadarPage() {
       <div>
         <Header title="Smart Eligibility Radar" subtitle="Criterion-level readiness and eligibility confidence" />
         <div className="p-8">
-          <div className="bg-white rounded-xl border border-gray-200 p-8 text-sm text-gray-500">
+          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-8 text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">
             Select or create a tender first to view radar insights.
           </div>
         </div>
@@ -102,8 +102,8 @@ export default function SmartEligibilityRadarPage() {
         </div>
 
         <div className="grid grid-cols-1 xl:grid-cols-5 gap-6">
-          <div className="xl:col-span-3 bg-white rounded-xl border border-gray-200 p-5">
-            <h2 className="text-sm font-semibold text-gray-900 mb-4">Category Readiness Radar</h2>
+          <div className="xl:col-span-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-4">Category Readiness Radar</h2>
             <div className="h-[320px]">
               <ResponsiveContainer width="100%" height="100%">
                 <RadarChart data={categoryStats}>
@@ -125,10 +125,10 @@ export default function SmartEligibilityRadarPage() {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4">
               {categoryStats.map((stat) => (
-                <div key={stat.category} className="rounded-lg border border-gray-200 p-3 bg-gray-50">
-                  <p className="text-xs font-semibold text-gray-700">{stat.category}</p>
+                <div key={stat.category} className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 bg-gray-50 dark:bg-gray-700/50">
+                  <p className="text-xs font-semibold text-gray-700 dark:text-gray-300">{stat.category}</p>
                   <p className="text-xl font-bold text-navy-700 mt-1">{stat.readiness}%</p>
-                  <p className="text-[11px] text-gray-500 mt-1">
+                  <p className="text-[11px] text-gray-500 dark:text-gray-400 dark:text-gray-500 mt-1">
                     {stat.eligible}/{stat.total} eligible across {stat.criteria} criteria
                   </p>
                 </div>
@@ -136,24 +136,24 @@ export default function SmartEligibilityRadarPage() {
             </div>
           </div>
 
-          <div className="xl:col-span-2 bg-white rounded-xl border border-gray-200 p-5">
-            <h2 className="text-sm font-semibold text-gray-900 mb-4">Top Blocker Criteria</h2>
+          <div className="xl:col-span-2 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-4">Top Blocker Criteria</h2>
             <div className="space-y-2.5">
               {blockerCriteria.slice(0, 8).map((row) => (
-                <div key={row.criterion.id} className="rounded-lg border border-gray-200 p-3 bg-gray-50">
+                <div key={row.criterion.id} className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 bg-gray-50 dark:bg-gray-700/50">
                   <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-medium text-gray-900">{row.criterion.name}</p>
+                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{row.criterion.name}</p>
                     <span className={`text-xs font-semibold ${row.blockerIndex >= 4 ? 'text-red-600' : 'text-amber-600'}`}>
                       Blocker Score: {row.blockerIndex}
                     </span>
                   </div>
-                  <p className="text-[11px] text-gray-500 mt-1">
+                  <p className="text-[11px] text-gray-500 dark:text-gray-400 dark:text-gray-500 mt-1">
                     {row.criterion.category} | {row.criterion.weight} | Not Eligible {row.notEligible}, Review {row.review}, Evaluated {row.total}
                   </p>
                 </div>
               ))}
               {blockerCriteria.length === 0 && (
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500">
                   No blockers detected yet. Run evaluation or wait for additional bidder submissions.
                 </p>
               )}
@@ -161,36 +161,36 @@ export default function SmartEligibilityRadarPage() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <h2 className="text-sm font-semibold text-gray-900 mb-4">Bidder Readiness Board</h2>
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+          <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-4">Bidder Readiness Board</h2>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[780px]">
               <thead>
-                <tr className="bg-gray-50">
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Bidder</th>
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Readiness</th>
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Avg Confidence</th>
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Mandatory Fails</th>
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Review Flags</th>
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Current Status</th>
+                <tr className="bg-gray-50 dark:bg-gray-700/50">
+                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider">Bidder</th>
+                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider">Readiness</th>
+                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider">Avg Confidence</th>
+                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider">Mandatory Fails</th>
+                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider">Review Flags</th>
+                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider">Current Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {bidderReadiness.map((row) => (
-                  <tr key={row.bidder.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-4 py-3 text-sm font-medium text-gray-900">{row.bidder.name}</td>
+                  <tr key={row.bidder.id} className="hover:bg-gray-50 dark:bg-gray-700/50 transition-colors">
+                    <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-gray-100">{row.bidder.name}</td>
                     <td className="px-4 py-3 text-sm text-navy-700 font-semibold">{row.score}%</td>
-                    <td className="px-4 py-3 text-sm text-gray-700">{row.confidenceAvg}%</td>
+                    <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{row.confidenceAvg}%</td>
                     <td className="px-4 py-3 text-sm text-red-600">{row.mandatoryFails}</td>
                     <td className="px-4 py-3 text-sm text-amber-600">{row.reviewFlags}</td>
                     <td className="px-4 py-3">
                       <span
                         className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${
                           row.status === 'Eligible'
-                            ? 'bg-emerald-50 text-emerald-700'
+                            ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700'
                             : row.status === 'Review'
-                            ? 'bg-amber-50 text-amber-700'
-                            : 'bg-red-50 text-red-700'
+                            ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-700'
+                            : 'bg-red-50 dark:bg-red-900/20 text-red-700'
                         }`}
                       >
                         {row.status}
@@ -200,7 +200,7 @@ export default function SmartEligibilityRadarPage() {
                 ))}
                 {bidderReadiness.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-500">
+                    <td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">
                       No bidder data available.
                     </td>
                   </tr>
@@ -226,13 +226,13 @@ function StatCard({
   color: string;
 }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-5">
+    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">{label}</p>
-          <p className="text-3xl font-bold text-gray-900 mt-2">{value}</p>
+          <p className="text-xs font-medium text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider">{label}</p>
+          <p className="text-3xl font-bold text-gray-900 dark:text-gray-100 mt-2">{value}</p>
         </div>
-        <div className="w-10 h-10 rounded-lg bg-gray-50 flex items-center justify-center">
+        <div className="w-10 h-10 rounded-lg bg-gray-50 dark:bg-gray-700/50 flex items-center justify-center">
           <Icon className={`w-5 h-5 ${color}`} />
         </div>
       </div>

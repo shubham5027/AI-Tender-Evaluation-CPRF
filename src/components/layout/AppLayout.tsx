@@ -16,7 +16,7 @@ export default function AppLayout() {
   }, [isDarkMode]);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-700/50 dark:bg-gray-950">
       <Sidebar />
       <main className="ml-64 min-h-screen">
         <Outlet />

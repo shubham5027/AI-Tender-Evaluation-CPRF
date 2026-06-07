@@ -161,15 +161,15 @@ export default function BidderUploadPage() {
         {/* Add bidder section */}
         <div className="mb-6">
           {showAddBidder && (
-            <div className="bg-white rounded-xl border border-gray-200 p-5 mb-4">
-              <h3 className="text-sm font-semibold text-gray-900 mb-3">Add New Bidder</h3>
+            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 mb-4">
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">Add New Bidder</h3>
               <div className="flex items-center gap-3">
                 <input
                   type="text"
                   value={newBidderName}
                   onChange={(e) => setNewBidderName(e.target.value)}
                   placeholder="Enter bidder company name"
-                  className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-navy-500"
+                  className="flex-1 px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-navy-500"
                 />
                 <button
                   onClick={() => {
@@ -192,7 +192,7 @@ export default function BidderUploadPage() {
                 </button>
                 <button
                   onClick={() => { setShowAddBidder(false); setNewBidderName(''); }}
-                  className="px-3 py-2 text-xs font-medium text-gray-700 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
+                  className="px-3 py-2 text-xs font-medium text-gray-700 dark:text-gray-300 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:bg-gray-700/50 transition-colors"
                 >
                   Cancel
                 </button>
@@ -205,13 +205,13 @@ export default function BidderUploadPage() {
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
             className={`border-2 border-dashed rounded-xl p-8 text-center transition-all ${
-              dragOver ? 'border-navy-500 bg-navy-50' : 'border-gray-300 bg-white'
+              dragOver ? 'border-navy-500 bg-navy-50' : 'border-gray-300 bg-white dark:bg-gray-800'
             }`}
           >
-            <FolderOpen className={`w-10 h-10 mx-auto mb-3 ${dragOver ? 'text-navy-600' : 'text-gray-400'}`} />
-            <h3 className="text-base font-semibold text-gray-900 mb-1.5">Upload Bidder Documents</h3>
-            <p className="text-sm text-gray-500 mb-4">Drag and drop bidder folders or files here</p>
-            <p className="text-xs text-gray-400 mb-5">Supported: PDF, DOC, DOCX, JPG, PNG (max 100MB per bidder)</p>
+            <FolderOpen className={`w-10 h-10 mx-auto mb-3 ${dragOver ? 'text-navy-600' : 'text-gray-400 dark:text-gray-500'}`} />
+            <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-1.5">Upload Bidder Documents</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500 mb-4">Drag and drop bidder folders or files here</p>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mb-5">Supported: PDF, DOC, DOCX, JPG, PNG (max 100MB per bidder)</p>
             <div className="flex items-center justify-center gap-3">
               <button
                 onClick={() => setShowAddBidder(true)}
@@ -231,7 +231,7 @@ export default function BidderUploadPage() {
                   };
                   input.click();
                 }}
-                className="px-5 py-2 bg-white text-navy-600 text-sm font-medium rounded-lg border border-navy-200 hover:bg-navy-50 transition-colors"
+                className="px-5 py-2 bg-white dark:bg-gray-800 text-navy-600 text-sm font-medium rounded-lg border border-navy-200 hover:bg-navy-50 transition-colors"
               >
                 Quick Upload
               </button>
@@ -241,21 +241,21 @@ export default function BidderUploadPage() {
 
         {/* Upload progress */}
         {uploadingBidder && isUploading && (
-          <div className="bg-white rounded-xl border border-gray-200 p-5 mb-6">
+          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 mb-6">
             <div className="flex items-center gap-3 mb-3">
               <Loader2 className="w-5 h-5 text-navy-600 animate-spin" />
-              <span className="text-sm font-medium text-gray-900">Uploading documents for {uploadingBidder}...</span>
+              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Uploading documents for {uploadingBidder}...</span>
             </div>
             <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
               <div className="h-full bg-navy-600 rounded-full transition-all duration-200" style={{ width: `${uploadProgress}%` }} />
             </div>
-            <p className="text-xs text-gray-500 mt-2">{uploadProgress}% complete</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 mt-2">{uploadProgress}% complete</p>
           </div>
         )}
 
         {/* Pipeline status */}
         {pipelineStatus && (
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6 flex items-center gap-3">
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 rounded-xl p-4 mb-6 flex items-center gap-3">
             {isParsing ? <Loader2 className="w-5 h-5 text-blue-600 animate-spin flex-shrink-0" /> : <Brain className="w-5 h-5 text-blue-600 flex-shrink-0" />}
             <p className="text-sm font-medium text-blue-800">{pipelineStatus}</p>
           </div>
@@ -263,14 +263,14 @@ export default function BidderUploadPage() {
 
         {/* Bidders list */}
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-gray-900">Submitted Bidders</h2>
+          <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">Submitted Bidders</h2>
           <div className="flex items-center gap-3">
-            <span className="text-xs text-gray-500">{bidders.length} bidders</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500">{bidders.length} bidders</span>
             {selectedTenderId && pendingCurrentTender > 0 && (
               <button
                 onClick={handleProcessDocuments}
                 disabled={isParsing}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 text-white text-xs font-medium rounded-lg hover:bg-amber-600 transition-colors disabled:opacity-50"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 dark:bg-amber-900/200 text-white text-xs font-medium rounded-lg hover:bg-amber-600 transition-colors disabled:opacity-50"
               >
                 <Brain className="w-3.5 h-3.5" /> Process Documents ({pendingCurrentTender})
               </button>
@@ -290,20 +290,20 @@ export default function BidderUploadPage() {
         {hasBidders ? (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {bidders.map((bidder) => (
-              <div key={bidder.id} className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow">
+              <div key={bidder.id} className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 hover:shadow-md transition-shadow">
                 <div className="flex items-start justify-between mb-3">
                   <div>
-                    <h3 className="text-sm font-semibold text-gray-900">{bidder.name}</h3>
-                    <p className="text-xs text-gray-500 mt-0.5">
+                    <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">{bidder.name}</h3>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 mt-0.5">
                       Uploaded {new Date(bidder.uploadedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                     </p>
                   </div>
                   <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
                     bidder.status === 'Completed'
-                      ? 'bg-emerald-50 text-emerald-700'
+                      ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700'
                       : bidder.status === 'Processing'
-                      ? 'bg-blue-50 text-blue-700'
-                      : 'bg-red-50 text-red-700'
+                      ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700'
+                      : 'bg-red-50 dark:bg-red-900/20 text-red-700'
                   }`}>
                     {bidder.status === 'Processing' && <Loader2 className="w-3 h-3 animate-spin" />}
                     {bidder.status === 'Completed' && <CheckCircle className="w-3 h-3" />}
@@ -315,27 +315,27 @@ export default function BidderUploadPage() {
                 <div className="space-y-1.5 mb-3">
                   {bidder.files.slice(0, 4).map((file) => (
                     <div key={file} className="flex items-center gap-2 text-xs text-gray-600">
-                      <FileText className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                      <FileText className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500 flex-shrink-0" />
                       <span className="truncate">{file}</span>
                     </div>
                   ))}
                   {bidder.files.length > 4 && (
-                    <p className="text-[11px] text-gray-400 pl-5.5">+{bidder.files.length - 4} more files</p>
+                    <p className="text-[11px] text-gray-400 dark:text-gray-500 pl-5.5">+{bidder.files.length - 4} more files</p>
                   )}
                 </div>
 
-                <div className="pt-3 border-t border-gray-100 flex items-center justify-between">
-                  <span className="text-[11px] text-gray-400">{bidder.files.length} files</span>
+                <div className="pt-3 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between">
+                  <span className="text-[11px] text-gray-400 dark:text-gray-500">{bidder.files.length} files</span>
                   <span className="text-[11px] font-medium text-navy-600">View Details</span>
                 </div>
               </div>
             ))}
           </div>
         ) : (
-          <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center">
             <FolderOpen className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-            <p className="text-sm text-gray-500">No bidders uploaded yet.</p>
-            <p className="text-xs text-gray-400 mt-1">Upload bidder documents to begin the evaluation process.</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">No bidders uploaded yet.</p>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Upload bidder documents to begin the evaluation process.</p>
           </div>
         )}
       </div>

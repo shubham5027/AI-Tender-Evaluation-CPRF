@@ -59,9 +59,9 @@ export default function NotificationToast() {
   };
 
   const bgMap = {
-    error: 'bg-red-50 border-red-200',
-    success: 'bg-emerald-50 border-emerald-200',
-    info: 'bg-blue-50 border-blue-200',
+    error: 'bg-red-50 dark:bg-red-900/20 border-red-200',
+    success: 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200',
+    info: 'bg-blue-50 dark:bg-blue-900/20 border-blue-200',
   };
 
   const textMap = {
@@ -83,7 +83,7 @@ export default function NotificationToast() {
             onClick={() => dismissToast(toast.id)}
             className="flex-shrink-0 p-0.5 rounded hover:bg-black/5 transition-colors"
           >
-            <X className="w-3.5 h-3.5 text-gray-400" />
+            <X className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500" />
           </button>
         </div>
       ))}

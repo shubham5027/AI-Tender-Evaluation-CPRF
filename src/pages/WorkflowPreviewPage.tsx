@@ -23,7 +23,7 @@ export default function WorkflowPreviewPage() {
       <div>
         <Header title="Auto Workflow Preview" subtitle="Live pipeline stage visibility for selected tender" />
         <div className="p-8">
-          <div className="bg-white rounded-xl border border-gray-200 p-8 text-sm text-gray-500">
+          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-8 text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">
             Select or create a tender first to view workflow stages.
           </div>
         </div>
@@ -64,11 +64,11 @@ export default function WorkflowPreviewPage() {
     <div>
       <Header title="Auto Workflow Preview" subtitle="Live pipeline stage visibility for selected tender" />
       <div className="p-8 space-y-6">
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div>
-              <h2 className="text-sm font-semibold text-gray-900">Pipeline Completion</h2>
-              <p className="text-xs text-gray-500 mt-0.5">
+              <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Pipeline Completion</h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 mt-0.5">
                 {completedCount} completed, {currentCount} in progress
               </p>
             </div>
@@ -87,8 +87,8 @@ export default function WorkflowPreviewPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-white rounded-xl border border-gray-200 p-5">
-            <h2 className="text-sm font-semibold text-gray-900 mb-4">Stage Checklist</h2>
+          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-4">Stage Checklist</h2>
             <div className="space-y-3">
               {checks.map((check) => (
                 <div key={check.label} className="flex items-start gap-3">
@@ -98,16 +98,16 @@ export default function WorkflowPreviewPage() {
                     <Clock3 className="w-4 h-4 text-amber-600 mt-0.5" />
                   )}
                   <div>
-                    <p className={`text-sm ${check.ok ? 'text-gray-900' : 'text-gray-500'}`}>{check.label}</p>
-                    {check.hint && <p className="text-[11px] text-gray-400 mt-0.5">{check.hint}</p>}
+                    <p className={`text-sm ${check.ok ? 'text-gray-900 dark:text-gray-100' : 'text-gray-500 dark:text-gray-400 dark:text-gray-500'}`}>{check.label}</p>
+                    {check.hint && <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5">{check.hint}</p>}
                   </div>
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="bg-white rounded-xl border border-gray-200 p-5">
-            <h2 className="text-sm font-semibold text-gray-900 mb-4">Pipeline Timeline</h2>
+          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-4">Pipeline Timeline</h2>
             <div className="space-y-3">
               {timeline.map((step) => (
                 <div key={step.id} className="flex items-start gap-3">
@@ -116,11 +116,11 @@ export default function WorkflowPreviewPage() {
                   ) : step.status === 'current' || (isParsing && step.label.includes('AI Evaluation')) ? (
                     <Loader2 className="w-4 h-4 text-blue-600 mt-0.5 animate-spin" />
                   ) : (
-                    <Clock3 className="w-4 h-4 text-gray-400 mt-0.5" />
+                    <Clock3 className="w-4 h-4 text-gray-400 dark:text-gray-500 mt-0.5" />
                   )}
                   <div>
-                    <p className="text-sm font-medium text-gray-900">{step.label}</p>
-                    <p className="text-xs text-gray-500">{step.timestamp || 'Pending'}</p>
+                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{step.label}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500">{step.timestamp || 'Pending'}</p>
                   </div>
                 </div>
               ))}
@@ -128,8 +128,8 @@ export default function WorkflowPreviewPage() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <h2 className="text-sm font-semibold text-gray-900 mb-3">Recommended Next Actions</h2>
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+          <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">Recommended Next Actions</h2>
           <div className="space-y-2">
             {nextActions.map((action) => (
               <div key={action} className="flex items-start gap-2.5 p-2.5 rounded-lg bg-navy-50 border border-navy-100">
@@ -146,8 +146,8 @@ export default function WorkflowPreviewPage() {
 
 function InfoCard({ label, value, tone }: { label: string; value: string; tone: string }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4">
-      <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wider">{label}</p>
+    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+      <p className="text-[11px] font-medium text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider">{label}</p>
       <p className={`text-2xl font-bold mt-1 ${tone}`}>{value}</p>
     </div>
   );

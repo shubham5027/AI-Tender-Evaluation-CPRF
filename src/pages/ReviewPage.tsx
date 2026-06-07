@@ -59,10 +59,10 @@ export default function ReviewPage() {
       <div>
         <Header title="Manual Review" subtitle="Review and resolve items flagged for manual verification" />
         <div className="p-8">
-          <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center">
             <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">All Clear</h3>
-            <p className="text-sm text-gray-500">No items currently require manual review.</p>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">All Clear</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">No items currently require manual review.</p>
           </div>
         </div>
       </div>
@@ -73,7 +73,7 @@ export default function ReviewPage() {
     <div>
       <Header title="Manual Review" subtitle="Review and resolve items flagged for manual verification" />
       <div className="p-8">
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6 flex items-center gap-3">
+        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 rounded-xl p-4 mb-6 flex items-center gap-3">
           <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0" />
           <div>
             <p className="text-sm font-medium text-amber-800">{evaluations.length} items require manual review</p>
@@ -83,33 +83,33 @@ export default function ReviewPage() {
 
         <div className="space-y-4">
           {evaluations.map((evalItem) => (
-            <div key={evalItem.id} className="bg-white rounded-xl border border-gray-200 p-5">
+            <div key={evalItem.id} className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
               <div className="flex items-start justify-between mb-4">
                 <div>
                   <div className="flex items-center gap-2 mb-1">
-                    <h3 className="text-sm font-semibold text-gray-900">{evalItem.bidderName}</h3>
+                    <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">{evalItem.bidderName}</h3>
                     <StatusBadge status={evalItem.decision} />
                   </div>
-                  <p className="text-xs text-gray-500">{evalItem.criterionName}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500">{evalItem.criterionName}</p>
                 </div>
                 <ConfidenceIndicator value={evalItem.confidence} />
               </div>
 
-              <div className="bg-gray-50 rounded-lg p-3 mb-4">
-                <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wider mb-1">AI Explanation</p>
-                <p className="text-sm text-gray-700">{evalItem.explanation}</p>
+              <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 mb-4">
+                <p className="text-[11px] font-medium text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">AI Explanation</p>
+                <p className="text-sm text-gray-700 dark:text-gray-300">{evalItem.explanation}</p>
               </div>
 
               <div className="grid grid-cols-2 gap-4 mb-4">
                 <div>
-                  <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wider mb-1">Extracted Value</p>
+                  <p className="text-[11px] font-medium text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">Extracted Value</p>
                   {editingId === evalItem.id ? (
                     <div className="flex items-center gap-2">
                       <input
                         type="text"
                         value={editValue}
                         onChange={(e) => setEditValue(e.target.value)}
-                        className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-navy-500"
+                        className="flex-1 px-3 py-1.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-navy-500"
                       />
                       <button onClick={() => saveEdit(evalItem.id)} className="p-1.5 bg-navy-600 text-white rounded-lg hover:bg-navy-700 transition-colors">
                         <Save className="w-3.5 h-3.5" />
@@ -117,33 +117,33 @@ export default function ReviewPage() {
                     </div>
                   ) : (
                     <div className="flex items-center gap-2">
-                      <p className="text-sm text-gray-900">{evalItem.extractedValue}</p>
+                      <p className="text-sm text-gray-900 dark:text-gray-100">{evalItem.extractedValue}</p>
                       <button onClick={() => startEdit(evalItem)} className="p-1 rounded hover:bg-gray-200 transition-colors">
-                        <Edit3 className="w-3.5 h-3.5 text-gray-400" />
+                        <Edit3 className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500" />
                       </button>
                     </div>
                   )}
                 </div>
                 <div>
-                  <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wider mb-1">Source Document</p>
+                  <p className="text-[11px] font-medium text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">Source Document</p>
                   <p className="text-sm text-navy-600 font-medium">{evalItem.sourceDocument}</p>
                 </div>
               </div>
 
               {commentForId === evalItem.id && (
                 <div className="mb-4">
-                  <label className="text-[11px] font-medium text-gray-500 uppercase tracking-wider">Add Comment</label>
+                  <label className="text-[11px] font-medium text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider">Add Comment</label>
                   <textarea
                     value={comment}
                     onChange={(e) => setComment(e.target.value)}
                     rows={2}
                     placeholder="Add your review comments here..."
-                    className="mt-1 w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-navy-500"
+                    className="mt-1 w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-navy-500"
                   />
                 </div>
               )}
 
-              <div className="flex items-center gap-2 pt-3 border-t border-gray-100">
+              <div className="flex items-center gap-2 pt-3 border-t border-gray-100 dark:border-gray-700">
                 <button
                   onClick={() => handleDecision(evalItem.id, 'Eligible')}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white text-xs font-medium rounded-lg hover:bg-emerald-700 transition-colors"
@@ -161,13 +161,13 @@ export default function ReviewPage() {
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
                     commentForId === evalItem.id
                       ? 'bg-navy-100 text-navy-700'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      : 'bg-gray-100 text-gray-700 dark:text-gray-300 hover:bg-gray-200'
                   }`}
                 >
                   <MessageSquare className="w-3.5 h-3.5" /> Comment
                 </button>
                 {evalItem.reviewComment && (
-                  <p className="text-xs text-gray-500 ml-2 italic">"{evalItem.reviewComment}"</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 ml-2 italic">"{evalItem.reviewComment}"</p>
                 )}
               </div>
             </div>

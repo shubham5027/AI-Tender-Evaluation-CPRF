@@ -5,10 +5,10 @@ import { useAppStore } from '../store/useAppStore';
 import type { CriterionCategory, DecisionStatus, EvaluationResult } from '../types';
 
 function decisionCellClass(decision?: DecisionStatus) {
-  if (decision === 'Eligible') return 'bg-emerald-50 text-emerald-700 border-emerald-200';
-  if (decision === 'Not Eligible') return 'bg-red-50 text-red-700 border-red-200';
-  if (decision === 'Review') return 'bg-amber-50 text-amber-700 border-amber-200';
-  return 'bg-gray-50 text-gray-500 border-gray-200';
+  if (decision === 'Eligible') return 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 border-emerald-200';
+  if (decision === 'Not Eligible') return 'bg-red-50 dark:bg-red-900/20 text-red-700 border-red-200';
+  if (decision === 'Review') return 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 border-amber-200';
+  return 'bg-gray-50 dark:bg-gray-700/50 text-gray-500 dark:text-gray-400 dark:text-gray-500 border-gray-200 dark:border-gray-700';
 }
 
 function scoreEvaluationRisk(evaluation?: EvaluationResult) {
@@ -35,7 +35,7 @@ export default function RiskHeatmapPage() {
       <div>
         <Header title="Risk Heatmap" subtitle="Bidder vs criterion risk visibility matrix" />
         <div className="p-8">
-          <div className="bg-white rounded-xl border border-gray-200 p-8 text-sm text-gray-500">
+          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-8 text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">
             Select or create a tender first to view heatmap insights.
           </div>
         </div>
@@ -107,11 +107,11 @@ export default function RiskHeatmapPage() {
     <div>
       <Header title="Risk Heatmap" subtitle="Bidder vs criterion risk visibility matrix" />
       <div className="p-8 space-y-6">
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div>
-              <h2 className="text-sm font-semibold text-gray-900">Heatmap Controls</h2>
-              <p className="text-xs text-gray-500 mt-0.5">
+              <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Heatmap Controls</h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 mt-0.5">
                 Green: Eligible, Amber: Review, Red: Not Eligible, Grey: Pending
               </p>
             </div>
@@ -119,7 +119,7 @@ export default function RiskHeatmapPage() {
               <select
                 value={selectedBidder}
                 onChange={(event) => setSelectedBidder(event.target.value)}
-                className="text-xs border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-navy-500 bg-white"
+                className="text-xs border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-navy-500 bg-white dark:bg-gray-800"
               >
                 <option value="all">All Bidders</option>
                 {tender.bidders.map((bidder) => (
@@ -131,7 +131,7 @@ export default function RiskHeatmapPage() {
               <select
                 value={selectedCategory}
                 onChange={(event) => setSelectedCategory(event.target.value as 'all' | CriterionCategory)}
-                className="text-xs border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-navy-500 bg-white"
+                className="text-xs border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-navy-500 bg-white dark:bg-gray-800"
               >
                 <option value="all">All Categories</option>
                 <option value="Technical">Technical</option>
@@ -158,19 +158,19 @@ export default function RiskHeatmapPage() {
           <MetricCard label="Not Eligible" value={summary.notEligible.toString()} tone="text-red-700" />
         </div>
 
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <h2 className="text-sm font-semibold text-gray-900 mb-4">Decision Heatmap</h2>
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+          <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-4">Decision Heatmap</h2>
           <div className="overflow-auto">
             <table className="min-w-[960px] w-full border-collapse">
               <thead>
                 <tr>
-                  <th className="sticky left-0 z-20 bg-white text-left text-xs font-semibold text-gray-600 p-2 border-b border-gray-200">
+                  <th className="sticky left-0 z-20 bg-white dark:bg-gray-800 text-left text-xs font-semibold text-gray-600 p-2 border-b border-gray-200 dark:border-gray-700">
                     Bidder
                   </th>
                   {visibleCriteria.map((criterion) => (
-                    <th key={criterion.id} className="text-left text-xs font-semibold text-gray-600 p-2 border-b border-gray-200 min-w-[180px]">
+                    <th key={criterion.id} className="text-left text-xs font-semibold text-gray-600 p-2 border-b border-gray-200 dark:border-gray-700 min-w-[180px]">
                       <p className="truncate">{criterion.name}</p>
-                      <p className="text-[10px] font-normal text-gray-400 mt-0.5">{criterion.category}</p>
+                      <p className="text-[10px] font-normal text-gray-400 dark:text-gray-500 mt-0.5">{criterion.category}</p>
                     </th>
                   ))}
                 </tr>
@@ -178,22 +178,22 @@ export default function RiskHeatmapPage() {
               <tbody>
                 {visibleBidders.map((bidder) => (
                   <tr key={bidder.id}>
-                    <td className="sticky left-0 z-10 bg-white p-2 border-b border-gray-100 text-xs font-medium text-gray-900">
+                    <td className="sticky left-0 z-10 bg-white dark:bg-gray-800 p-2 border-b border-gray-100 dark:border-gray-700 text-xs font-medium text-gray-900 dark:text-gray-100">
                       {bidder.name}
                     </td>
                     {visibleCriteria.map((criterion) => {
                       const evaluation = evaluationByPair.get(`${bidder.id}_${criterion.id}`);
                       if (showOnlyRiskCells && evaluation?.decision === 'Eligible') {
                         return (
-                          <td key={`${bidder.id}_${criterion.id}`} className="p-2 border-b border-gray-100">
-                            <div className="text-[11px] px-2 py-1 rounded border bg-white text-gray-300 border-gray-100">
+                          <td key={`${bidder.id}_${criterion.id}`} className="p-2 border-b border-gray-100 dark:border-gray-700">
+                            <div className="text-[11px] px-2 py-1 rounded border bg-white dark:bg-gray-800 text-gray-300 border-gray-100 dark:border-gray-700">
                               Hidden
                             </div>
                           </td>
                         );
                       }
                       return (
-                        <td key={`${bidder.id}_${criterion.id}`} className="p-2 border-b border-gray-100 align-top">
+                        <td key={`${bidder.id}_${criterion.id}`} className="p-2 border-b border-gray-100 dark:border-gray-700 align-top">
                           <div className={`text-[11px] px-2 py-1 rounded border ${decisionCellClass(evaluation?.decision)}`}>
                             <p>{evaluation?.decision || 'Pending'}</p>
                             <p className="text-[10px] opacity-80 mt-0.5">Confidence: {formatConfidence(evaluation?.confidence)}</p>
@@ -209,41 +209,41 @@ export default function RiskHeatmapPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-white rounded-xl border border-gray-200 p-5">
-            <h3 className="text-sm font-semibold text-gray-900 mb-3">Top Risk Bidders</h3>
+          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">Top Risk Bidders</h3>
             <div className="space-y-2">
               {bidderRiskRows.slice(0, 6).map((row) => (
-                <div key={row.bidderId} className="flex items-center justify-between p-2.5 rounded-lg bg-gray-50 border border-gray-100">
+                <div key={row.bidderId} className="flex items-center justify-between p-2.5 rounded-lg bg-gray-50 dark:bg-gray-700/50 border border-gray-100 dark:border-gray-700">
                   <p className="text-sm text-gray-800">{row.bidderName}</p>
                   <span className={`text-xs font-semibold ${row.rowRisk >= 8 ? 'text-red-600' : row.rowRisk >= 4 ? 'text-amber-600' : 'text-emerald-600'}`}>
                     Risk Score: {row.rowRisk}
                   </span>
                 </div>
               ))}
-              {bidderRiskRows.length === 0 && <p className="text-xs text-gray-500">No bidders available in this filter.</p>}
+              {bidderRiskRows.length === 0 && <p className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500">No bidders available in this filter.</p>}
             </div>
           </div>
 
-          <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
             <div className="flex items-center gap-2 mb-3">
               <AlertTriangle className="w-4 h-4 text-amber-600" />
-              <h3 className="text-sm font-semibold text-gray-900">Criterion Hotspots</h3>
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Criterion Hotspots</h3>
             </div>
             <div className="space-y-2">
               {criterionRiskRows.slice(0, 6).map((row) => (
-                <div key={row.criterion.id} className="p-2.5 rounded-lg bg-gray-50 border border-gray-100">
+                <div key={row.criterion.id} className="p-2.5 rounded-lg bg-gray-50 dark:bg-gray-700/50 border border-gray-100 dark:border-gray-700">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-sm text-gray-800">{row.criterion.name}</p>
                     <span className={`text-xs font-semibold ${row.riskIndex >= 60 ? 'text-red-600' : row.riskIndex >= 30 ? 'text-amber-600' : 'text-emerald-600'}`}>
                       {row.riskIndex}% risk
                     </span>
                   </div>
-                  <p className="text-[11px] text-gray-500 mt-1">
+                  <p className="text-[11px] text-gray-500 dark:text-gray-400 dark:text-gray-500 mt-1">
                     Not Eligible: {row.notEligible}, Review: {row.review}, Evaluated: {row.total}
                   </p>
                 </div>
               ))}
-              {criterionRiskRows.length === 0 && <p className="text-xs text-gray-500">No criteria available in this filter.</p>}
+              {criterionRiskRows.length === 0 && <p className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500">No criteria available in this filter.</p>}
             </div>
           </div>
         </div>
@@ -254,8 +254,8 @@ export default function RiskHeatmapPage() {
 
 function MetricCard({ label, value, tone }: { label: string; value: string; tone: string }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4">
-      <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wider">{label}</p>
+    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+      <p className="text-[11px] font-medium text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider">{label}</p>
       <p className={`text-2xl font-bold mt-1 ${tone}`}>{value}</p>
     </div>
   );
