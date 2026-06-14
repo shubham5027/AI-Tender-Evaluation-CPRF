@@ -3,7 +3,8 @@ import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
 import { z } from 'zod';
-import { MongoClient } from 'mongodb';
+import pg from 'pg';
+const { Client } = pg;
 import {
   S3Client,
   HeadBucketCommand,
@@ -12,6 +13,14 @@ import {
   DeleteObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import {
+  TextractClient,
+  DetectDocumentTextCommand,
+} from '@aws-sdk/client-textract';
+import {
+  BedrockRuntimeClient,
+  InvokeModelCommand,
+} from '@aws-sdk/client-bedrock-runtime';
 
 const app = express();
 
@@ -24,30 +33,22 @@ const SARVAM_USE_OCR_KEY_FOR_LLM = process.env.SARVAM_USE_OCR_KEY_FOR_LLM === 't
 const SARVAM_LLM_API_KEY = process.env.SARVAM_LLM_API_KEY || (SARVAM_USE_OCR_KEY_FOR_LLM ? SARVAM_API_KEY : '');
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
+const BEDROCK_MODEL_ID = process.env.BEDROCK_MODEL_ID || '';
+const AWS_TEXTRACT_ENABLED = process.env.AWS_TEXTRACT_ENABLED === 'true';
 const S3_BIDDER_PREFIX = process.env.S3_BIDDER_PREFIX || 'Bidder_Documents';
 const S3_TENDER_PREFIX = process.env.S3_TENDER_PREFIX || 'Tendor_Policy_Doc';
 const API_AUTH_TOKEN = process.env.API_AUTH_TOKEN || '';
 const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 50);
 const EXTERNAL_AI_TIMEOUT_MS = Number(process.env.EXTERNAL_AI_TIMEOUT_MS || 8000);
 const MAX_OCR_CHARS_FOR_EVAL = Number(process.env.MAX_OCR_CHARS_FOR_EVAL || 12000);
-const MONGODB_SERVER_SELECTION_TIMEOUT_MS = Number(process.env.MONGODB_SERVER_SELECTION_TIMEOUT_MS || 5000);
-const MONGODB_CONNECT_TIMEOUT_MS = Number(process.env.MONGODB_CONNECT_TIMEOUT_MS || 5000);
-const MONGODB_URI = process.env.MONGODB_URI || '';
-const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME || 'tendereval';
-const MONGODB_STATE_COLLECTION = process.env.MONGODB_STATE_COLLECTION || 'app_state';
-const MONGODB_OCR_COLLECTION = process.env.MONGODB_OCR_COLLECTION || 'ocr_results';
-const MONGODB_TENDER_OCR_COLLECTION = process.env.MONGODB_TENDER_OCR_COLLECTION || 'tender_policy_ocr';
-const MONGODB_BIDDER_OCR_COLLECTION = process.env.MONGODB_BIDDER_OCR_COLLECTION || 'bidder_document_ocr';
-const MONGODB_EVALUATIONS_COLLECTION = process.env.MONGODB_EVALUATIONS_COLLECTION || 'evaluations';
-const MONGODB_EVALUATION_TRACES_COLLECTION = process.env.MONGODB_EVALUATION_TRACES_COLLECTION || 'evaluation_traces';
-const MONGODB_UPLOAD_EVENTS_COLLECTION = process.env.MONGODB_UPLOAD_EVENTS_COLLECTION || 'upload_events';
-const STATE_DOC_ID = process.env.MONGODB_STATE_DOC_ID || 'current';
+const DATABASE_URL = process.env.DATABASE_URL || '';
+const STATE_DOC_ID = process.env.STATE_DOC_ID || 'current';
 
 if (!BUCKET) {
   throw new Error('Missing S3_BUCKET_NAME in environment.');
 }
-if (!MONGODB_URI) {
-  throw new Error('Missing MONGODB_URI in environment.');
+if (!DATABASE_URL) {
+  throw new Error('Missing DATABASE_URL in environment.');
 }
 
 if (!API_AUTH_TOKEN) {
@@ -65,13 +66,23 @@ const s3 = new S3Client({
   forcePathStyle: process.env.S3_FORCE_PATH_STYLE === 'true',
 });
 
-const mongoClient = new MongoClient(MONGODB_URI, {
-  serverSelectionTimeoutMS: MONGODB_SERVER_SELECTION_TIMEOUT_MS,
-  connectTimeoutMS: MONGODB_CONNECT_TIMEOUT_MS,
+const textract = new TextractClient({
+  region: process.env.AWS_REGION || 'ap-south-1',
 });
-let mongoConnectPromise = null;
-let mongoWriteBackoffUntil = 0;
-let lastMongoWriteError = '';
+
+const bedrock = new BedrockRuntimeClient({
+  region: process.env.AWS_REGION || 'us-east-1',
+});
+
+const pgClient = new Client({
+  connectionString: DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false
+  },
+});
+let pgConnectPromise = null;
+let pgWriteBackoffUntil = 0;
+let lastPgWriteError = '';
 
 app.use(cors());
 app.use(express.json({ limit: '25mb' }));
@@ -127,62 +138,59 @@ function authMiddleware(req, res, next) {
   return next();
 }
 
-async function getMongoDb() {
-  if (!mongoConnectPromise) {
-    mongoConnectPromise = mongoClient.connect();
+async function getPostgresClient() {
+  if (!pgConnectPromise) {
+    pgConnectPromise = pgClient.connect();
   }
-  await mongoConnectPromise;
-  return mongoClient.db(MONGODB_DB_NAME);
+  await pgConnectPromise;
+  return pgClient;
 }
 
-async function getStateCollection() {
-  const db = await getMongoDb();
-  return db.collection(MONGODB_STATE_COLLECTION);
+async function getStateTable() {
+  return await getPostgresClient();
 }
 
-async function getOcrCollection() {
-  const db = await getMongoDb();
-  return db.collection(MONGODB_OCR_COLLECTION);
+async function getOcrTable() {
+  return await getPostgresClient();
 }
 
-async function getTenderOcrCollection() {
-  const db = await getMongoDb();
-  return db.collection(MONGODB_TENDER_OCR_COLLECTION);
+async function getTenderOcrTable() {
+  return await getPostgresClient();
 }
 
-async function getBidderOcrCollection() {
-  const db = await getMongoDb();
-  return db.collection(MONGODB_BIDDER_OCR_COLLECTION);
+async function getBidderOcrTable() {
+  return await getPostgresClient();
 }
 
-async function getEvaluationsCollection() {
-  const db = await getMongoDb();
-  return db.collection(MONGODB_EVALUATIONS_COLLECTION);
+async function getEvaluationsTable() {
+  return await getPostgresClient();
 }
 
-async function getEvaluationTracesCollection() {
-  const db = await getMongoDb();
-  return db.collection(MONGODB_EVALUATION_TRACES_COLLECTION);
+async function getEvaluationTracesTable() {
+  return await getPostgresClient();
 }
 
-async function getUploadEventsCollection() {
-  const db = await getMongoDb();
-  return db.collection(MONGODB_UPLOAD_EVENTS_COLLECTION);
+async function getUploadEventsTable() {
+  return await getPostgresClient();
 }
 
-function canAttemptMongoWrite() {
-  return Date.now() >= mongoWriteBackoffUntil;
+function canAttemptPgWrite() {
+  return Date.now() >= pgWriteBackoffUntil;
 }
 
-function noteMongoWriteFailure(message) {
-  lastMongoWriteError = message;
-  mongoWriteBackoffUntil = Date.now() + 60_000;
+function notePgWriteFailure(message) {
+  lastPgWriteError = message;
+  pgWriteBackoffUntil = Date.now() + 60_000;
 }
 
 async function readStateEnvelope() {
-  const collection = await getStateCollection();
-  const doc = await collection.findOne({ _id: STATE_DOC_ID });
-  if (!doc) return null;
+  const client = await getStateTable();
+  const result = await client.query(
+    'SELECT version, state FROM app_state WHERE id = $1',
+    [STATE_DOC_ID]
+  );
+  if (result.rows.length === 0) return null;
+  const doc = result.rows[0];
   return {
     version: typeof doc.version === 'number' ? doc.version : 0,
     state: doc.state && typeof doc.state === 'object' ? doc.state : null,
@@ -205,6 +213,33 @@ function extractSarvamText(payload) {
   }
 
   return '';
+}
+
+async function performTextractOCR(fileBytes) {
+  try {
+    const command = new DetectDocumentTextCommand({
+      Document: {
+        Bytes: fileBytes,
+      },
+    });
+    
+    const response = await textract.send(command);
+    
+    // Extract text from Textract response
+    if (response.Blocks && Array.isArray(response.Blocks)) {
+      const textBlocks = response.Blocks
+        .filter(block => block.BlockType === 'LINE')
+        .map(block => block.Text)
+        .filter(text => text);
+      
+      return textBlocks.join('\n');
+    }
+    
+    return '';
+  } catch (error) {
+    console.error('Textract OCR failed:', error instanceof Error ? error.message : 'Unknown error');
+    throw error;
+  }
 }
 
 async function fetchJsonWithTimeout(url, options = {}, timeoutMs = EXTERNAL_AI_TIMEOUT_MS) {
@@ -284,67 +319,7 @@ Please evaluate and respond in this exact JSON format (no markdown, no code bloc
   "explanation": "Detailed explanation of the decision"
 }`;
 
-  // Try Sarvam LLM first
-  if (SARVAM_LLM_API_KEY) {
-    try {
-      const { response, parsed } = await fetchJsonWithTimeout(SARVAM_LLM_API_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'api-subscription-key': SARVAM_LLM_API_KEY,
-        },
-        body: JSON.stringify({
-          model: 'Meta-Llama-3-8B-Instruct',
-          messages: [
-            {
-              role: 'system',
-              content: 'You are an expert tender evaluation assistant. Respond only with valid JSON.',
-            },
-            {
-              role: 'user',
-              content: prompt,
-            },
-          ],
-          temperature: 0.3,
-          max_tokens: 500,
-        }),
-      });
-
-      if (response.ok) {
-        const result = parsed;
-        if (result.choices && result.choices[0]?.message?.content) {
-          const content = result.choices[0].message.content.trim();
-          try {
-            const parsed = JSON.parse(content);
-            return {
-              ...parsed,
-              decision: normalizeDecision(parsed.decision),
-              confidence: normalizeConfidence(parsed.confidence),
-              provider: 'sarvam-llm',
-            };
-          } catch {
-            // If JSON parsing fails, try to extract JSON from the response
-            const jsonMatch = content.match(/\{[\s\S]*\}/);
-            if (jsonMatch) {
-              const parsed = JSON.parse(jsonMatch[0]);
-              return {
-                ...parsed,
-                decision: normalizeDecision(parsed.decision),
-                confidence: normalizeConfidence(parsed.confidence),
-                provider: 'sarvam-llm',
-              };
-            }
-          }
-        }
-      } else {
-        console.warn(`Sarvam LLM responded ${response.status}`);
-      }
-    } catch (error) {
-      console.warn('Sarvam LLM failed:', error instanceof Error ? error.message : 'Unknown error');
-    }
-  }
-
-  // Fallback to OpenRouter
+  // Try OpenRouter first (primary)
   if (OPENROUTER_API_KEY) {
     try {
       const { response, parsed } = await fetchJsonWithTimeout(OPENROUTER_API_URL, {
@@ -405,6 +380,165 @@ Please evaluate and respond in this exact JSON format (no markdown, no code bloc
     }
   }
 
+  // Fallback to Bedrock
+  if (BEDROCK_MODEL_ID) {
+    try {
+      let body;
+      let contentType = 'application/json';
+      
+      // Different models have different request formats
+      if (BEDROCK_MODEL_ID.includes('anthropic') || BEDROCK_MODEL_ID.includes('claude')) {
+        // Anthropic Claude format
+        body = JSON.stringify({
+          anthropic_version: 'bedrock-2023-05-31',
+          max_tokens: 500,
+          messages: [
+            {
+              role: 'user',
+              content: prompt
+            }
+          ]
+        });
+      } else if (BEDROCK_MODEL_ID.includes('amazon') || BEDROCK_MODEL_ID.includes('titan')) {
+        // Amazon Titan format
+        body = JSON.stringify({
+          inputText: prompt,
+          textGenerationConfig: {
+            maxTokenCount: 500,
+            temperature: 0.3,
+          }
+        });
+      } else {
+        // Generic format
+        body = JSON.stringify({
+          prompt: prompt,
+          max_tokens: 500
+        });
+      }
+      
+      const command = new InvokeModelCommand({
+        modelId: BEDROCK_MODEL_ID,
+        contentType: contentType,
+        body: body,
+      });
+      
+      const response = await bedrock.send(command);
+      
+      if (response.$metadata.httpStatusCode === 200) {
+        const responseBody = new TextDecoder().decode(response.body);
+        let parsed;
+        try {
+          parsed = JSON.parse(responseBody);
+        } catch {
+          // If not JSON, return as is
+          return {
+            decision: 'Review',
+            confidence: 0.5,
+            extracted_value: responseBody.substring(0, 200),
+            explanation: 'Bedrock response could not be parsed as JSON',
+            provider: 'bedrock',
+          };
+        }
+        
+        // Extract text based on model format
+        let extractedText = '';
+        if (parsed.completion) {
+          extractedText = parsed.completion;
+        } else if (parsed.outputText) {
+          extractedText = parsed.outputText;
+        } else if (parsed.content && Array.isArray(parsed.content)) {
+          extractedText = parsed.content.map(c => c.text).join('');
+        } else if (parsed.message && parsed.message.content) {
+          extractedText = parsed.message.content;
+        }
+        
+        if (extractedText) {
+          try {
+            const jsonMatch = extractedText.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+              const parsed = JSON.parse(jsonMatch[0]);
+              return {
+                ...parsed,
+                decision: normalizeDecision(parsed.decision),
+                confidence: normalizeConfidence(parsed.confidence),
+                provider: 'bedrock',
+              };
+            }
+          } catch {
+            return {
+              decision: 'Review',
+              confidence: 0.5,
+              extracted_value: extractedText.substring(0, 200),
+              explanation: 'Bedrock response could not be parsed as JSON',
+              provider: 'bedrock',
+            };
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('Bedrock failed:', error instanceof Error ? error.message : 'Unknown error');
+    }
+  }
+
+  // Try Sarvam LLM as additional fallback
+  if (SARVAM_LLM_API_KEY) {
+    try {
+      const { response, parsed } = await fetchJsonWithTimeout(SARVAM_LLM_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'api-subscription-key': SARVAM_LLM_API_KEY,
+        },
+        body: JSON.stringify({
+          model: 'Meta-Llama-3-8B-Instruct',
+          messages: [
+            {
+              role: 'system',
+              content: 'You are an expert tender evaluation assistant. Respond only with valid JSON.',
+            },
+            {
+              role: 'user',
+              content: prompt,
+            },
+          ],
+          temperature: 0.3,
+          max_tokens: 500,
+        }),
+      });
+
+      if (response.ok) {
+        const result = parsed;
+        if (result.choices && result.choices[0]?.message?.content) {
+          const content = result.choices[0].message.content.trim();
+          try {
+            const parsed = JSON.parse(content);
+            return {
+              ...parsed,
+              decision: normalizeDecision(parsed.decision),
+              confidence: normalizeConfidence(parsed.confidence),
+              provider: 'sarvam-llm',
+            };
+          } catch {
+            const jsonMatch = content.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+              const parsed = JSON.parse(jsonMatch[0]);
+              return {
+                ...parsed,
+                decision: normalizeDecision(parsed.decision),
+                confidence: normalizeConfidence(parsed.confidence),
+                provider: 'sarvam-llm',
+              };
+            }
+          }
+        }
+      } else {
+        console.warn(`Sarvam LLM responded ${response.status}`);
+      }
+    } catch (error) {
+      console.warn('Sarvam LLM failed:', error instanceof Error ? error.message : 'Unknown error');
+    }
+  }
+
   // Fallback: deterministic evaluation based on keywords
   const text = (ocr_text || '').toLowerCase();
   let decision = 'Review';
@@ -434,22 +568,22 @@ Please evaluate and respond in this exact JSON format (no markdown, no code bloc
 }
 
 app.get('/health', (_req, res) => {
-  res.json({ ok: true, storage: 's3', database: 'mongodb' });
+  res.json({ ok: true, storage: 's3', database: 'postgresql' });
 });
 
 app.get('/health/deps', async (_req, res) => {
   const result = {
     ok: false,
-    mongo: { ok: false, error: '' },
+    postgres: { ok: false, error: '' },
     s3: { ok: false, error: '' },
   };
 
   try {
-    const db = await getMongoDb();
-    await db.command({ ping: 1 });
-    result.mongo.ok = true;
+    const client = await getPostgresClient();
+    await client.query('SELECT 1');
+    result.postgres.ok = true;
   } catch (error) {
-    result.mongo.error = error instanceof Error ? error.message : 'MongoDB check failed';
+    result.postgres.error = error instanceof Error ? error.message : 'PostgreSQL check failed';
   }
 
   try {
@@ -459,7 +593,7 @@ app.get('/health/deps', async (_req, res) => {
     result.s3.error = error instanceof Error ? error.message : 'S3 check failed';
   }
 
-  result.ok = result.mongo.ok && result.s3.ok;
+  result.ok = result.postgres.ok && result.s3.ok;
   const statusCode = result.ok ? 200 : 503;
   return res.status(statusCode).json(result);
 });
@@ -474,10 +608,10 @@ app.get('/health/ai', (_req, res) => {
       openrouter_configured: Boolean(OPENROUTER_API_KEY),
       timeout_ms: EXTERNAL_AI_TIMEOUT_MS,
     },
-    mongo_write: {
-      available: canAttemptMongoWrite(),
-      backoff_ms_remaining: Math.max(0, mongoWriteBackoffUntil - now),
-      last_error: lastMongoWriteError,
+    postgres_write: {
+      available: canAttemptPgWrite(),
+      backoff_ms_remaining: Math.max(0, pgWriteBackoffUntil - now),
+      last_error: lastPgWriteError,
     },
   });
 });
@@ -487,23 +621,10 @@ app.use('/api', authMiddleware);
 app.get('/api/observability/summary', async (req, res) => {
   try {
     const tenderId = String(req.query.tender_id || '').trim();
-    const filter = tenderId ? { tender_id: tenderId } : {};
+    const client = await getPostgresClient();
 
-    const [
-      ocrCollection,
-      tenderOcrCollection,
-      bidderOcrCollection,
-      evaluationsCollection,
-      evaluationTracesCollection,
-      uploadEventsCollection,
-    ] = await Promise.all([
-      getOcrCollection(),
-      getTenderOcrCollection(),
-      getBidderOcrCollection(),
-      getEvaluationsCollection(),
-      getEvaluationTracesCollection(),
-      getUploadEventsCollection(),
-    ]);
+    const whereClause = tenderId ? 'WHERE tender_id = $1' : '';
+    const params = tenderId ? [tenderId] : [];
 
     const [
       legacyOcrCount,
@@ -515,26 +636,26 @@ app.get('/api/observability/summary', async (req, res) => {
       latestEvaluation,
       latestTrace,
     ] = await Promise.all([
-      ocrCollection.countDocuments(filter),
-      tenderOcrCollection.countDocuments(filter),
-      bidderOcrCollection.countDocuments(filter),
-      evaluationsCollection.countDocuments(filter),
-      evaluationTracesCollection.countDocuments(filter),
-      uploadEventsCollection.countDocuments(filter),
-      evaluationsCollection.find(filter).sort({ updated_at: -1, created_at: -1 }).limit(1).next(),
-      evaluationTracesCollection.find(filter).sort({ created_at: -1 }).limit(1).next(),
+      client.query(`SELECT COUNT(*) FROM ocr_results ${whereClause}`, params).then(r => parseInt(r.rows[0].count)),
+      client.query(`SELECT COUNT(*) FROM tender_policy_ocr ${whereClause}`, params).then(r => parseInt(r.rows[0].count)),
+      client.query(`SELECT COUNT(*) FROM bidder_document_ocr ${whereClause}`, params).then(r => parseInt(r.rows[0].count)),
+      client.query(`SELECT COUNT(*) FROM evaluations ${whereClause}`, params).then(r => parseInt(r.rows[0].count)),
+      client.query(`SELECT COUNT(*) FROM evaluation_traces ${whereClause}`, params).then(r => parseInt(r.rows[0].count)),
+      client.query(`SELECT COUNT(*) FROM upload_events ${whereClause}`, params).then(r => parseInt(r.rows[0].count)),
+      client.query(`SELECT * FROM evaluations ${whereClause} ORDER BY updated_at DESC, created_at DESC LIMIT 1`, params).then(r => r.rows[0] || null),
+      client.query(`SELECT * FROM evaluation_traces ${whereClause} ORDER BY created_at DESC LIMIT 1`, params).then(r => r.rows[0] || null),
     ]);
 
     return res.json({
       success: true,
       tender_id: tenderId || null,
       collections: {
-        legacy_ocr: MONGODB_OCR_COLLECTION,
-        tender_policy_ocr: MONGODB_TENDER_OCR_COLLECTION,
-        bidder_document_ocr: MONGODB_BIDDER_OCR_COLLECTION,
-        evaluations: MONGODB_EVALUATIONS_COLLECTION,
-        evaluation_traces: MONGODB_EVALUATION_TRACES_COLLECTION,
-        upload_events: MONGODB_UPLOAD_EVENTS_COLLECTION,
+        legacy_ocr: 'ocr_results',
+        tender_policy_ocr: 'tender_policy_ocr',
+        bidder_document_ocr: 'bidder_document_ocr',
+        evaluations: 'evaluations',
+        evaluation_traces: 'evaluation_traces',
+        upload_events: 'upload_events',
       },
       counts: {
         legacy_ocr: legacyOcrCount,
@@ -547,7 +668,7 @@ app.get('/api/observability/summary', async (req, res) => {
       latest: {
         evaluation: latestEvaluation
           ? {
-            evaluation_key: latestEvaluation._id,
+            evaluation_key: latestEvaluation.id,
             tender_id: latestEvaluation.tender_id,
             bidder_id: latestEvaluation.bidder_id,
             criterion_id: latestEvaluation.criterion_id,
@@ -583,35 +704,51 @@ app.get('/api/observability/records', async (req, res) => {
     const limitRaw = Number(req.query.limit || 25);
     const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 200) : 25;
 
-    const filter = {};
-    if (tenderId) filter.tender_id = tenderId;
-    if (bidderId) filter.bidder_id = bidderId;
-
-    const loaders = {
-      tender_policy_ocr: async () => getTenderOcrCollection(),
-      bidder_document_ocr: async () => getBidderOcrCollection(),
-      evaluations: async () => getEvaluationsCollection(),
-      evaluation_traces: async () => getEvaluationTracesCollection(),
-      upload_events: async () => getUploadEventsCollection(),
+    const tables = {
+      tender_policy_ocr: 'tender_policy_ocr',
+      bidder_document_ocr: 'bidder_document_ocr',
+      evaluations: 'evaluations',
+      evaluation_traces: 'evaluation_traces',
+      upload_events: 'upload_events',
     };
 
-    if (!Object.prototype.hasOwnProperty.call(loaders, kind)) {
+    if (!Object.prototype.hasOwnProperty.call(tables, kind)) {
       return res.status(400).json({
         success: false,
         error: 'Invalid kind. Use one of: tender_policy_ocr, bidder_document_ocr, evaluations, evaluation_traces, upload_events',
       });
     }
 
-    const collection = await loaders[kind]();
-    const sort = kind === 'evaluations' ? { updated_at: -1, created_at: -1 } : { created_at: -1 };
-    const records = await collection.find(filter).sort(sort).limit(limit).toArray();
+    const client = await getPostgresClient();
+    const table = tables[kind];
+    
+    const conditions = [];
+    const params = [];
+    let paramIndex = 1;
+    
+    if (tenderId) {
+      conditions.push(`tender_id = $${paramIndex++}`);
+      params.push(tenderId);
+    }
+    if (bidderId) {
+      conditions.push(`bidder_id = $${paramIndex++}`);
+      params.push(bidderId);
+    }
+    
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const orderBy = kind === 'evaluations' ? 'ORDER BY updated_at DESC, created_at DESC' : 'ORDER BY created_at DESC';
+    
+    const query = `SELECT * FROM ${table} ${whereClause} ${orderBy} LIMIT $${paramIndex++}`;
+    params.push(limit);
+    
+    const result = await client.query(query, params);
 
     return res.json({
       success: true,
       kind,
-      filter,
-      count: records.length,
-      records,
+      filter: { tender_id: tenderId || null, bidder_id: bidderId || null },
+      count: result.rows.length,
+      records: result.rows,
     });
   } catch (error) {
     return res.status(500).json({
@@ -625,7 +762,7 @@ app.get('/api/state', async (_req, res) => {
   try {
     const envelope = await readStateEnvelope();
     if (!envelope || !envelope.state) {
-      return res.status(404).json({ success: false, message: 'State not found in MongoDB.' });
+      return res.status(404).json({ success: false, message: 'State not found in PostgreSQL.' });
     }
     return res.json({ success: true, version: envelope.version, state: envelope.state });
   } catch (error) {
@@ -644,7 +781,7 @@ app.put('/api/state', async (req, res) => {
     }
 
     const { expected_version, state } = parsed.data;
-    const collection = await getStateCollection();
+    const client = await getStateTable();
     const current = await readStateEnvelope();
     const currentVersion = current?.version ?? 0;
 
@@ -659,40 +796,28 @@ app.put('/api/state', async (req, res) => {
     const nextVersion = currentVersion + 1;
     const now = new Date();
 
-    const writeResult = await collection.updateOne(
-      { _id: STATE_DOC_ID, version: currentVersion },
-      {
-        $set: {
-          state,
-          version: nextVersion,
-          updated_at: now,
-        },
-        $setOnInsert: {
-          created_at: now,
-        },
-      },
-      { upsert: currentVersion === 0 }
-    );
-
-    if (writeResult.matchedCount === 0 && writeResult.upsertedCount === 0) {
-      const latest = await readStateEnvelope();
-      return res.status(409).json({
-        success: false,
-        error: 'Version conflict',
-        current_version: latest?.version ?? 0,
-      });
+    if (currentVersion === 0) {
+      await client.query(
+        'INSERT INTO app_state (id, version, state, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)',
+        [STATE_DOC_ID, nextVersion, JSON.stringify(state), now, now]
+      );
+    } else {
+      const result = await client.query(
+        'UPDATE app_state SET version = $1, state = $2, updated_at = $3 WHERE id = $4 AND version = $5',
+        [nextVersion, JSON.stringify(state), now, STATE_DOC_ID, currentVersion]
+      );
+      if (result.rowCount === 0) {
+        const latest = await readStateEnvelope();
+        return res.status(409).json({
+          success: false,
+          error: 'Version conflict',
+          current_version: latest?.version ?? 0,
+        });
+      }
     }
 
     return res.json({ success: true, version: nextVersion });
   } catch (error) {
-    if (error && typeof error === 'object' && error.code === 11000) {
-      const latest = await readStateEnvelope();
-      return res.status(409).json({
-        success: false,
-        error: 'Version conflict',
-        current_version: latest?.version ?? 0,
-      });
-    }
     return res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'Failed to persist state',
@@ -744,17 +869,11 @@ app.post('/api/files/upload', (req, res, next) => {
     );
 
     try {
-      const uploadEventsCollection = await getUploadEventsCollection();
-      await uploadEventsCollection.insertOne({
-        scope: scope === 'tender' ? 'tender_policy' : 'bidder_document',
-        tender_id: tenderId || null,
-        bidder_id: bidderId || null,
-        file_name: file.originalname,
-        file_size: file.size,
-        content_type: file.mimetype || 'application/octet-stream',
-        s3_key: key,
-        created_at: new Date(),
-      });
+      const client = await getUploadEventsTable();
+      await client.query(
+        'INSERT INTO upload_events (scope, tender_id, bidder_id, file_name, file_size, content_type, s3_key, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+        [scope === 'tender' ? 'tender_policy' : 'bidder_document', tenderId || null, bidderId || null, file.originalname, file.size, file.mimetype || 'application/octet-stream', key, new Date()]
+      );
     } catch (error) {
       console.warn('[upload] Failed to write upload observability event:', error instanceof Error ? error.message : 'Unknown error');
     }
@@ -835,10 +954,8 @@ app.post('/api/ocr', async (req, res) => {
     const { file_base64, file_url, language, file_id, tender_id, bidder_id } = parsed.data;
     const sourceScope = resolveDocumentScope(parsed.data);
 
-    const ocrCollection = await getOcrCollection();
-    const dedicatedOcrCollection = sourceScope === 'tender_policy'
-      ? await getTenderOcrCollection()
-      : await getBidderOcrCollection();
+    const client = await getOcrTable();
+    const dedicatedTable = sourceScope === 'tender_policy' ? 'tender_policy_ocr' : 'bidder_document_ocr';
     const requestMeta = {
       file_id: file_id || null,
       source_scope: sourceScope,
@@ -852,7 +969,47 @@ app.post('/api/ocr', async (req, res) => {
     requestMetaForError = requestMeta;
     sourceScopeForError = sourceScope;
 
-    if (SARVAM_API_KEY) {
+    let text = '';
+    let provider = 'local';
+    let rawResponse = null;
+
+    if (AWS_TEXTRACT_ENABLED) {
+      try {
+        let fileBytes = null;
+        
+        if (file_base64) {
+          // Decode base64 to bytes
+          const buffer = Buffer.from(file_base64, 'base64');
+          fileBytes = buffer;
+        } else if (file_url) {
+          // Download file from S3
+          const s3Key = file_url.includes('amazonaws.com') ? file_url.split('/').pop() : file_url;
+          const getCommand = new GetObjectCommand({
+            Bucket: BUCKET,
+            Key: s3Key,
+          });
+          const s3Response = await s3.send(getCommand);
+          const chunks = [];
+          for await (const chunk of s3Response.Body) {
+            chunks.push(chunk);
+          }
+          fileBytes = Buffer.concat(chunks);
+        }
+
+        if (fileBytes) {
+          text = await performTextractOCR(fileBytes);
+          provider = 'textract';
+          rawResponse = { service: 'aws-textract' };
+        } else {
+          throw new Error('No file data provided for Textract OCR');
+        }
+      } catch (error) {
+        console.error('Textract OCR failed, falling back to local:', error instanceof Error ? error.message : 'Unknown error');
+        text = `Simulated OCR output${file_url ? ` for ${file_url}` : ''}`;
+        provider = 'local';
+        rawResponse = null;
+      }
+    } else if (SARVAM_API_KEY) {
       const payload = {
         model: 'dococr',
         language: language || 'hi,en',
@@ -874,43 +1031,43 @@ app.post('/api/ocr', async (req, res) => {
       }
 
       const result = parsed || {};
-      const text = extractSarvamText(result);
-      const record = {
-        ...requestMeta,
-        provider: 'sarvam',
-        text: text || '',
-        raw_response: result,
-      };
-      await Promise.all([
-        ocrCollection.insertOne(record),
-        dedicatedOcrCollection.insertOne(record),
-      ]);
-      return res.json({ success: true, text: text || '', provider: 'sarvam' });
+      text = extractSarvamText(result);
+      provider = 'sarvam';
+      rawResponse = result;
+    } else {
+      text = `Simulated OCR output${file_url ? ` for ${file_url}` : ''}`;
+      provider = 'local';
+      rawResponse = null;
     }
 
-    const localText = `Simulated OCR output${file_url ? ` for ${file_url}` : ''}`;
     const record = {
-      ...requestMeta,
-      provider: 'local',
-      text: localText,
-      raw_response: null,
+      file_id: requestMeta.file_id,
+      source_scope: requestMeta.source_scope,
+      tender_id: requestMeta.tender_id,
+      bidder_id: requestMeta.bidder_id,
+      file_url: requestMeta.file_url,
+      has_file_base64: requestMeta.has_file_base64,
+      language: requestMeta.language,
+      provider: provider,
+      text: text || '',
+      raw_response: rawResponse,
+      created_at: requestMeta.created_at,
     };
     await Promise.all([
-      ocrCollection.insertOne(record),
-      dedicatedOcrCollection.insertOne(record),
+      client.query(
+        'INSERT INTO ocr_results (file_id, source_scope, tender_id, bidder_id, file_url, has_file_base64, language, provider, text, raw_response, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)',
+        [record.file_id, record.source_scope, record.tender_id, record.bidder_id, record.file_url, record.has_file_base64, record.language, record.provider, record.text, JSON.stringify(record.raw_response), record.created_at]
+      ),
+      client.query(
+        `INSERT INTO ${dedicatedTable} (file_id, source_scope, tender_id, bidder_id, file_url, has_file_base64, language, provider, text, raw_response, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        [record.file_id, record.source_scope, record.tender_id, record.bidder_id, record.file_url, record.has_file_base64, record.language, record.provider, record.text, JSON.stringify(record.raw_response), record.created_at]
+      ),
     ]);
-
-    return res.json({
-      success: true,
-      text: localText,
-      provider: 'local',
-    });
+    return res.json({ success: true, text: text || '', provider: provider });
   } catch (error) {
     try {
-      const ocrCollection = await getOcrCollection();
-      const dedicatedOcrCollection = sourceScopeForError === 'tender_policy'
-        ? await getTenderOcrCollection()
-        : await getBidderOcrCollection();
+      const client = await getOcrTable();
+      const dedicatedTable = sourceScopeForError === 'tender_policy' ? 'tender_policy_ocr' : 'bidder_document_ocr';
       const errorRecord = {
         ...(requestMetaForError || {
           file_id: null,
@@ -929,8 +1086,14 @@ app.post('/api/ocr', async (req, res) => {
         failed_at: new Date(),
       };
       await Promise.all([
-        ocrCollection.insertOne(errorRecord),
-        dedicatedOcrCollection.insertOne(errorRecord),
+        client.query(
+          'INSERT INTO ocr_results (file_id, source_scope, tender_id, bidder_id, file_url, has_file_base64, language, provider, text, raw_response, error_message, failed_at, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)',
+          [errorRecord.file_id, errorRecord.source_scope, errorRecord.tender_id, errorRecord.bidder_id, errorRecord.file_url, errorRecord.has_file_base64, errorRecord.language, errorRecord.provider, errorRecord.text, errorRecord.raw_response, errorRecord.error_message, errorRecord.failed_at, errorRecord.created_at]
+        ),
+        client.query(
+          `INSERT INTO ${dedicatedTable} (file_id, source_scope, tender_id, bidder_id, file_url, has_file_base64, language, provider, text, raw_response, error_message, failed_at, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+          [errorRecord.file_id, errorRecord.source_scope, errorRecord.tender_id, errorRecord.bidder_id, errorRecord.file_url, errorRecord.has_file_base64, errorRecord.language, errorRecord.provider, errorRecord.text, errorRecord.raw_response, errorRecord.error_message, errorRecord.failed_at, errorRecord.created_at]
+        ),
       ]);
     } catch (persistError) {
       console.warn('[ocr] Failed to write OCR error observability record:', persistError instanceof Error ? persistError.message : 'Unknown error');
@@ -959,7 +1122,6 @@ app.post('/api/evaluate', async (req, res) => {
 
     // Create evaluation record
     const evaluation = {
-      _id: `${tender_id}:${bidder_id}:${criterion_id}`,
       tender_id,
       bidder_id,
       bidder_name: evaluationData.bidder_name,
@@ -968,10 +1130,11 @@ app.post('/api/evaluate', async (req, res) => {
       criterion_category: evaluationData.criterion_category,
       criterion_weight: evaluationData.criterion_weight,
       criterion_threshold: evaluationData.criterion_threshold,
+      ocr_text: evaluationData.ocr_text,
+      source_document: evaluationData.source_document || 'N/A',
       extracted_value: aiResult.extracted_value || '',
       decision: normalizeDecision(aiResult.decision),
       confidence: normalizeConfidence(aiResult.confidence),
-      source_document: evaluationData.source_document || 'N/A',
       explanation: aiResult.explanation || '',
       ai_provider: aiResult.provider || 'unknown',
       created_at: new Date(),
@@ -980,50 +1143,48 @@ app.post('/api/evaluate', async (req, res) => {
 
     let persisted = true;
     let persistenceError = '';
-    if (canAttemptMongoWrite()) {
+    if (canAttemptPgWrite()) {
       try {
-        const evaluationsCollection = await getEvaluationsCollection();
-        await evaluationsCollection.updateOne(
-          { _id: evaluation._id },
-          { $set: evaluation },
-          { upsert: true }
+        const client = await getEvaluationsTable();
+        const existingResult = await client.query(
+          'SELECT id FROM evaluations WHERE tender_id = $1 AND bidder_id = $2 AND criterion_id = $3',
+          [tender_id, bidder_id, criterion_id]
         );
+        
+        if (existingResult.rows.length > 0) {
+          await client.query(
+            'UPDATE evaluations SET bidder_name = $1, criterion_name = $2, criterion_category = $3, criterion_weight = $4, criterion_threshold = $5, criterion_description = $6, ocr_text = $7, source_document = $8, extracted_value = $9, decision = $10, confidence = $11, explanation = $12, ai_provider = $13, updated_at = $14 WHERE tender_id = $15 AND bidder_id = $16 AND criterion_id = $17',
+            [evaluation.bidder_name, evaluation.criterion_name, evaluation.criterion_category || null, evaluation.criterion_weight || null, evaluation.criterion_threshold || null, evaluation.criterion_description || null, evaluation.ocr_text || null, evaluation.source_document, evaluation.extracted_value, evaluation.decision, evaluation.confidence, evaluation.explanation, evaluation.ai_provider, evaluation.updated_at, tender_id, bidder_id, criterion_id]
+          );
+        } else {
+          await client.query(
+            'INSERT INTO evaluations (tender_id, bidder_id, bidder_name, criterion_id, criterion_name, criterion_category, criterion_weight, criterion_threshold, criterion_description, ocr_text, source_document, extracted_value, decision, confidence, explanation, ai_provider, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)',
+            [evaluation.tender_id, evaluation.bidder_id, evaluation.bidder_name, evaluation.criterion_id, evaluation.criterion_name, evaluation.criterion_category || null, evaluation.criterion_weight || null, evaluation.criterion_threshold || null, evaluation.criterion_description || null, evaluation.ocr_text || null, evaluation.source_document, evaluation.extracted_value, evaluation.decision, evaluation.confidence, evaluation.explanation, evaluation.ai_provider, evaluation.created_at, evaluation.updated_at]
+          );
+        }
       } catch (error) {
         persisted = false;
         persistenceError = error instanceof Error ? error.message : 'Failed to persist evaluation';
-        noteMongoWriteFailure(persistenceError);
-        console.warn('[evaluate] Mongo persist failed:', persistenceError);
+        notePgWriteFailure(persistenceError);
+        console.warn('[evaluate] PostgreSQL persist failed:', persistenceError);
       }
     } else {
       persisted = false;
-      persistenceError = lastMongoWriteError || 'MongoDB write temporarily skipped due to recent connection failure.';
+      persistenceError = lastPgWriteError || 'PostgreSQL write temporarily skipped due to recent connection failure.';
     }
 
     try {
-      const evaluationTracesCollection = await getEvaluationTracesCollection();
-      await evaluationTracesCollection.insertOne({
-        evaluation_key: evaluation._id,
-        tender_id,
-        bidder_id,
-        bidder_name: evaluationData.bidder_name,
-        criterion_id,
-        criterion_name: evaluationData.criterion_name,
-        criterion_category: evaluationData.criterion_category || null,
-        criterion_weight: evaluationData.criterion_weight || null,
-        criterion_threshold: evaluationData.criterion_threshold || null,
-        source_document: evaluationData.source_document || null,
-        ocr_text_length: typeof evaluationData.ocr_text === 'string' ? evaluationData.ocr_text.length : 0,
-        ocr_excerpt: typeof evaluationData.ocr_text === 'string' ? evaluationData.ocr_text.slice(0, 2000) : '',
-        ai_provider: evaluation.ai_provider,
-        decision: evaluation.decision,
-        confidence: evaluation.confidence,
-        extracted_value: evaluation.extracted_value,
-        explanation: evaluation.explanation,
-        duration_ms: completedAt - startedAt,
-        evaluation_persisted: persisted,
-        evaluation_persistence_error: persisted ? null : persistenceError,
-        created_at: new Date(),
-      });
+      const client = await getEvaluationTracesTable();
+      const evaluationKeyResult = await client.query(
+        'SELECT id FROM evaluations WHERE tender_id = $1 AND bidder_id = $2 AND criterion_id = $3',
+        [tender_id, bidder_id, criterion_id]
+      );
+      const evaluationKey = evaluationKeyResult.rows.length > 0 ? evaluationKeyResult.rows[0].id : null;
+      
+      await client.query(
+        'INSERT INTO evaluation_traces (evaluation_key, tender_id, bidder_id, criterion_id, decision, ai_provider, duration_ms, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+        [evaluationKey, tender_id, bidder_id, criterion_id, evaluation.decision, evaluation.ai_provider, completedAt - startedAt, new Date()]
+      );
     } catch (error) {
       console.warn('[evaluate] Failed to write evaluation trace:', error instanceof Error ? error.message : 'Unknown error');
     }
@@ -1033,7 +1194,6 @@ app.post('/api/evaluate', async (req, res) => {
       persisted,
       ...(persisted ? {} : { persistence_error: persistenceError }),
       evaluation: {
-        id: evaluation._id,
         tender_id: evaluation.tender_id,
         bidder_id: evaluation.bidder_id,
         bidder_name: evaluation.bidder_name,
@@ -1062,16 +1222,16 @@ app.get('/api/evaluations/:tenderId', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Missing tenderId.' });
     }
 
-    const evaluationsCollection = await getEvaluationsCollection();
-    const evaluations = await evaluationsCollection
-      .find({ tender_id: tenderId })
-      .sort({ created_at: -1 })
-      .toArray();
+    const client = await getEvaluationsTable();
+    const result = await client.query(
+      'SELECT * FROM evaluations WHERE tender_id = $1 ORDER BY created_at DESC',
+      [tenderId]
+    );
 
     return res.json({
       success: true,
-      evaluations: evaluations.map((e) => ({
-        id: e._id,
+      evaluations: result.rows.map((e) => ({
+        id: e.id,
         tender_id: e.tender_id,
         bidder_id: e.bidder_id,
         bidder_name: e.bidder_name,

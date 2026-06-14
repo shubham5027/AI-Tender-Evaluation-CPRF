@@ -1,0 +1,2 @@
+This is a test document for AWS Textract OCR integration.
+The system should be able to extract this text using AWS Textract.
