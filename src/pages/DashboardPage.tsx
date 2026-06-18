@@ -101,7 +101,7 @@ export default function DashboardPage() {
                   className="flex items-center gap-1 px-2.5 py-1 bg-white text-navy-600 text-xs font-medium rounded-lg border border-navy-200 hover:bg-navy-50 transition-colors disabled:opacity-50"
                   title="Load demo data"
                 >
-                  <Database className="w-3 h-3" /> Seed Demo
+                  <Database className="w-3 h-3" /> Seed Data  
                 </button>
                 <button
                   onClick={() => navigate('/tender-upload')}
