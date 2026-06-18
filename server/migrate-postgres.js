@@ -4,6 +4,7 @@ import pg from 'pg';
 const { Client } = pg;
 
 const databaseUrl = process.env.DATABASE_URL;
+// const databaseUrl = 'postgresql://postgres:IVUvbnE1XrRwp8Mqdjv2@database-1.cluster-c6jeseqqi6mu.us-east-1.rds.amazonaws.com:5432/postgres';
 
 if (!databaseUrl) {
   console.error('ERROR: DATABASE_URL is required');

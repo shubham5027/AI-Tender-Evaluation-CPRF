@@ -62,12 +62,12 @@ It helps procurement teams upload tender/bidder documents, extract criteria, run
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                           Frontend (React)                          │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ │
-│  │ Dashboard│ │  Upload  │ │Evaluation│ │  Review  │ │ Reports  │ │
-│  └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐   │
+│  │ Dashboard│ │  Upload  │ │Evaluation│ │  Review  │ │ Reports  │   │
+│  └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘   
 │       │            │            │            │            │         │
 │       └────────────┴────────────┴────────────┴────────────┴─────────┘
-│                            │                                         │
+│                            │                                        │
 │                    ┌───────▼────────┐                               │
 │                    │  API Client    │                               │
 │                    │  (src/lib/api) │                               │
@@ -75,21 +75,21 @@ It helps procurement teams upload tender/bidder documents, extract criteria, run
 └────────────────────────────┼────────────────────────────────────────┘
                              │
                     ┌────────▼────────┐
-                    │  Express API     │
-                    │  Server          │
-                    │  (server/index)  │
+                    │  Express API    │
+                    │  Server         │
+                    │  (server/index) │
                     └────────┬────────┘
                              │
-        ┌────────────────────┼────────────────────┐
-        │                    │                    │
+        ┌────────────────────┼───────────────────┐
+        │                    │                   │
 ┌───────▼────────┐  ┌────────▼────────┐  ┌──────▼──────┐
 │   PostgreSQL   │  │     AWS S3      │  │  AI Services │
-│                │  │                │  │              │
-│  • app_state   │  │  • File Upload │  │  • Textract │
-│  • ocr_results │  │  • Signed URLs │  │  • OpenRouter│
-│  • evaluations │  │  • File Delete │  │  • Bedrock  │
-│  • traces      │  │                │  │  • Sarvam   │
-│  • upload_events│ │                │  │              │
+│                │  │                 │  │              │
+│  • app_state   │  │  • File Upload  │  │  • Textract  │
+│  • ocr_results │  │  • Signed URLs  │  │  • OpenRouter│
+│  • evaluations │  │  • File Delete  │  │  • Bedrock   │
+│  • traces      │  │                 │  │  • Sarvam    │
+│  • upload_events│ │                 │  │              │
 └────────────────┘  └─────────────────┘  └──────────────┘
 
 AI Provider Fallback Chain:
