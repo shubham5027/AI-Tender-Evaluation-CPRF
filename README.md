@@ -47,57 +47,11 @@ It helps procurement teams upload tender/bidder documents, extract criteria, run
 - `/risk-heatmap` - Risk Heatmap
 - `/workflow-preview` - Auto Workflow Preview
 
-## Architecture
 
-- Frontend calls `src/lib/api.ts`.
-- API server runs from `server/index.js`.
-- Primary persistence is PostgreSQL with versioned state management.
-- File storage is S3 via upload/signed-url endpoints.
-- OCR processing uses AWS Textract with local fallback.
-- AI evaluation uses OpenRouter as primary provider with Bedrock fallback.
-- If API is unavailable, frontend gracefully falls back to local browser storage.
+## System Architecture 
 
-## System Architecture Diagram
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                           Frontend (React)                          │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐   │
-│  │ Dashboard│ │  Upload  │ │Evaluation│ │  Review  │ │ Reports  │   │
-│  └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘   
-│       │            │            │            │            │         │
-│       └────────────┴────────────┴────────────┴────────────┴─────────┘
-│                            │                                        │
-│                    ┌───────▼────────┐                               │
-│                    │  API Client    │                               │
-│                    │  (src/lib/api) │                               │
-│                    └───────┬────────┘                               │
-└────────────────────────────┼────────────────────────────────────────┘
-                             │
-                    ┌────────▼────────┐
-                    │  Express API    │
-                    │  Server         │
-                    │  (server/index) │
-                    └────────┬────────┘
-                             │
-        ┌────────────────────┼───────────────────┐
-        │                    │                   │
-┌───────▼────────┐  ┌────────▼────────┐  ┌──────▼──────┐
-│   PostgreSQL   │  │     AWS S3      │  │  AI Services │
-│                │  │                 │  │              │
-│  • app_state   │  │  • File Upload  │  │  • Textract  │
-│  • ocr_results │  │  • Signed URLs  │  │  • OpenRouter│
-│  • evaluations │  │  • File Delete  │  │  • Bedrock   │
-│  • traces      │  │                 │  │  • Sarvam    │
-│  • upload_events│ │                 │  │              │
-└────────────────┘  └─────────────────┘  └──────────────┘
-
-AI Provider Fallback Chain:
-OpenRouter → Bedrock → Sarvam LLM → Deterministic Fallback
-
-OCR Provider Fallback Chain:
-AWS Textract → Sarvam OCR → Local Simulation
-```
+<img width="1293" height="991" alt="Screenshot_27-6-2026_181921_" src="https://github.com/user-attachments/assets/c06e88f8-2364-4342-a2ce-d8ca53803918" />
+<img width="1328" height="497" alt="Screenshot 2026-06-27 183718" src="https://github.com/user-attachments/assets/07dfa4a4-a2d5-4ddf-85d2-6c8978eca9f6" />
 
 ## Prerequisites
 
