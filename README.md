@@ -28,8 +28,11 @@ It helps procurement teams upload tender/bidder documents, extract criteria, run
 - Recharts
 - React Router
 - Express (API server)
-- MongoDB (state + observability storage)
+- PostgreSQL (state + observability storage)
 - AWS S3 (file storage)
+- AWS Textract (OCR processing)
+- OpenRouter (primary AI provider)
+- AWS Bedrock (fallback AI provider)
 
 ## Application Routes
 
@@ -48,16 +51,61 @@ It helps procurement teams upload tender/bidder documents, extract criteria, run
 
 - Frontend calls `src/lib/api.ts`.
 - API server runs from `server/index.js`.
-- Primary persistence is MongoDB (`/api/state` optimistic versioned writes).
+- Primary persistence is PostgreSQL with versioned state management.
 - File storage is S3 via upload/signed-url endpoints.
-- OCR/evaluation use server-side providers when configured.
+- OCR processing uses AWS Textract with local fallback.
+- AI evaluation uses OpenRouter as primary provider with Bedrock fallback.
 - If API is unavailable, frontend gracefully falls back to local browser storage.
+
+## System Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                           Frontend (React)                          │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐   │
+│  │ Dashboard│ │  Upload  │ │Evaluation│ │  Review  │ │ Reports  │   │
+│  └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘   
+│       │            │            │            │            │         │
+│       └────────────┴────────────┴────────────┴────────────┴─────────┘
+│                            │                                        │
+│                    ┌───────▼────────┐                               │
+│                    │  API Client    │                               │
+│                    │  (src/lib/api) │                               │
+│                    └───────┬────────┘                               │
+└────────────────────────────┼────────────────────────────────────────┘
+                             │
+                    ┌────────▼────────┐
+                    │  Express API    │
+                    │  Server         │
+                    │  (server/index) │
+                    └────────┬────────┘
+                             │
+        ┌────────────────────┼───────────────────┐
+        │                    │                   │
+┌───────▼────────┐  ┌────────▼────────┐  ┌──────▼──────┐
+│   PostgreSQL   │  │     AWS S3      │  │  AI Services │
+│                │  │                 │  │              │
+│  • app_state   │  │  • File Upload  │  │  • Textract  │
+│  • ocr_results │  │  • Signed URLs  │  │  • OpenRouter│
+│  • evaluations │  │  • File Delete  │  │  • Bedrock   │
+│  • traces      │  │                 │  │  • Sarvam    │
+│  • upload_events│ │                 │  │              │
+└────────────────┘  └─────────────────┘  └──────────────┘
+
+AI Provider Fallback Chain:
+OpenRouter → Bedrock → Sarvam LLM → Deterministic Fallback
+
+OCR Provider Fallback Chain:
+AWS Textract → Sarvam OCR → Local Simulation
+```
 
 ## Prerequisites
 
 - Node.js 18+
-- MongoDB instance
+- PostgreSQL instance (Aurora PostgreSQL recommended)
 - S3 bucket (AWS S3 or S3-compatible provider)
+- OpenRouter API key (for AI evaluation)
+- AWS credentials (for S3, Textract, and Bedrock)
 
 ## Setup
 
@@ -89,44 +137,43 @@ SARVAM_LLM_API_KEY=your_sarvam_llm_key
 SARVAM_USE_OCR_KEY_FOR_LLM=false
 OPENROUTER_API_KEY=your_openrouter_key
 
-# MongoDB
-MONGODB_URI=mongodb://127.0.0.1:27017
-MONGODB_DB_NAME=tendereval
-MONGODB_STATE_COLLECTION=app_state
-MONGODB_STATE_DOC_ID=current
-MONGODB_OCR_COLLECTION=ocr_results
-MONGODB_TENDER_OCR_COLLECTION=tender_policy_ocr
-MONGODB_BIDDER_OCR_COLLECTION=bidder_document_ocr
-MONGODB_EVALUATIONS_COLLECTION=evaluations
-MONGODB_EVALUATION_TRACES_COLLECTION=evaluation_traces
-MONGODB_UPLOAD_EVENTS_COLLECTION=upload_events
+# PostgreSQL
+DATABASE_URL=postgresql://user:password@host:port/database
 
-# S3
+# AWS Services
 AWS_REGION=ap-south-1
 AWS_ACCESS_KEY_ID=your_access_key
 AWS_SECRET_ACCESS_KEY=your_secret_key
 S3_BUCKET_NAME=your_bucket_name
 S3_BIDDER_PREFIX=Bidder_Documents
 S3_TENDER_PREFIX=Tendor_Policy_Doc
+AWS_TEXTRACT_ENABLED=true
+BEDROCK_MODEL_ID=anthropic.claude-3-5-sonnet-20240620-v1:0
 
 # Optional for S3-compatible providers (e.g. MinIO)
 # S3_ENDPOINT=http://127.0.0.1:9000
 # S3_FORCE_PATH_STYLE=true
 ```
 
-3. Start API server:
+3. Run PostgreSQL migration:
+
+```bash
+node server/migrate-postgres.js
+```
+
+4. Start API server:
 
 ```bash
 npm run dev:api
 ```
 
-4. Start frontend (new terminal):
+5. Start frontend (new terminal):
 
 ```bash
 npm run dev
 ```
 
-5. Open:
+6. Open:
 
 `http://localhost:5173`
 

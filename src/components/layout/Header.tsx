@@ -51,14 +51,14 @@ export default function Header({ title, subtitle }: HeaderProps) {
     setDemoUser(user);
     localStorage.setItem('demo-user', JSON.stringify(user));
     setIsUserMenuOpen(false);
-    showToast('success', 'Demo user signed in.');
+    showToast('success', 'User signed in.');
   };
 
   const signOutDemo = () => {
     setDemoUser(null);
     localStorage.removeItem('demo-user');
     setIsUserMenuOpen(false);
-    showToast('info', 'Signed out from demo user.');
+    showToast('info', 'Signed out from user.');
   };
 
   return (
@@ -141,14 +141,14 @@ export default function Header({ title, subtitle }: HeaderProps) {
                   onClick={signOutDemo}
                   className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-red-600 hover:bg-red-50 transition-colors"
                 >
-                  <LogOut className="w-4 h-4" /> Sign out (Demo)
+                  <LogOut className="w-4 h-4" /> Sign out
                 </button>
               ) : (
                 <button
                   onClick={signInDemo}
                   className="w-full px-3 py-2 rounded-lg text-sm text-white bg-navy-600 hover:bg-navy-700 transition-colors"
                 >
-                  Sign in as Officer (Demo)
+                  Sign in as Officer
                 </button>
               )}
             </div>
