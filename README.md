@@ -38,6 +38,14 @@ India's public procurement market processes **₹50–70 lakh crore annually** (
 
 ![Architecture Diagram](https://github.com/user-attachments/assets/c06e88f8-2364-4342-a2ce-d8ca53803918)
 
+
+
+## 🎥 Demo Video
+
+[![ProcureRocket Demo](https://img.youtube.com/vi/cspJOnABpXM/maxresdefault.jpg)](https://youtu.be/cspJOnABpXM)
+
+> Click to watch the walkthrough
+
 ### Architecture at a Glance
 
 ```
@@ -102,20 +110,9 @@ All objects are versioned, server-side encrypted, and accessed only via short-li
 
 When OpenRouter is unavailable, the evaluation engine automatically fails over to Bedrock (`anthropic.claude-3-5-sonnet-20240620-v1:0` by default, also supports Nova Pro and Titan). A deterministic rule engine handles edge cases as the final safety net.
 
-### AWS ECS Fargate — API Compute
 
-The Express API server runs on Fargate (serverless containers) — no server management, automatic scaling, and CloudWatch logs out of the box.
 
-### Supporting Services
 
-| Service | Role |
-|---------|------|
-| **EventBridge + SQS** | Event-driven OCR pipeline with retries and dead-letter queues |
-| **IAM** | Least-privilege roles for every service boundary |
-| **Secrets Manager** | Centralized storage for API keys, DB credentials, and tokens |
-| **CloudWatch** | Metrics, alarms, and structured logs across all tiers |
-| **KMS** | Envelope encryption for Aurora and S3 |
-| **VPC** | Aurora and Fargate isolated in private subnets; no public DB exposure |
 
 ---
 
